@@ -35,21 +35,36 @@ class OfficialPolicyProvider:
             response = self.session.get(self.FED_URL, timeout=self.timeout_seconds)
             response.raise_for_status()
             text = self._clean(response.text)
-            match = re.search(r"Target Range for the Federal Funds Rate.*?(\d+\.\d+)%\s*to\s*(\d+\.\d+)%", text, re.I | re.S)
-            if not match:
-                match = re.search(r"Federal Funds Rate Target Range.*?(\d+\.\d+)%\s*to\s*(\d+\.\d+)%", text, re.I | re.S)
+
+            # The official Fed page currently exposes the value as:
+            # "Fed Funds Target Range 3.50% to 3.75%". Keep a few variants
+            # because the page is rendered/marked up differently over time.
+            patterns = (
+                r"Fed Funds Target Range\s*(\d+(?:\.\d+)?)%\s*to\s*(\d+(?:\.\d+)?)%",
+                r"Target Range for the Federal Funds Rate\s*(\d+(?:\.\d+)?)%\s*to\s*(\d+(?:\.\d+)?)%",
+                r"Federal Funds Rate Target Range\s*(\d+(?:\.\d+)?)%\s*to\s*(\d+(?:\.\d+)?)%",
+            )
+            match = next((re.search(pattern, text, re.I | re.S) for pattern in patterns if re.search(pattern, text, re.I | re.S)), None)
             if not match:
                 raise RuntimeError("Fed target range was not found on the official page.")
+
+            lower = float(match.group(1))
+            upper = float(match.group(2))
             return {
-                "policy_rate_lower": float(match.group(1)),
-                "policy_rate_upper": float(match.group(2)),
-                "policy_rate": (float(match.group(1)) + float(match.group(2))) / 2,
+                "policy_rate_lower": lower,
+                "policy_rate_upper": upper,
+                "policy_rate": (lower + upper) / 2,
                 "currency": "USD",
                 "source": "Federal Reserve",
                 "status": "CURRENT",
             }
         except Exception as exc:
-            return {"currency": "USD", "source": "Federal Reserve", "status": "UNAVAILABLE", "reason": str(exc)}
+            return {
+                "currency": "USD",
+                "source": "Federal Reserve",
+                "status": "UNAVAILABLE",
+                "reason": str(exc),
+            }
 
     def _boe(self) -> dict[str, Any]:
         try:
