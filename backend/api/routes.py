@@ -45,6 +45,33 @@ def analyze(symbol: str):
         current_time=current_time,
     )
 
+    # Keep the existing PALReport contract used by the dashboard, but make
+    # the official release schedule available to the existing calendar fields.
+    # NewsEngine may intentionally filter events for bias/risk analysis; the
+    # calendar should still show relevant official USD/GBP releases.
+    try:
+        official_events = official_calendar.get_events(
+            days_before=1,
+            days_after=30,
+        )
+
+        display_events = [
+            event
+            for event in official_events
+            if isinstance(event, dict)
+            and str(event.get("currency", "")).upper() in {"USD", "GBP"}
+        ]
+        display_events.sort(key=lambda event: event.get("time", ""))
+
+        # Preserve existing schema names so the frontend does not need a
+        # second incompatible calendar API.
+        report.news["upcoming_events"] = display_events
+        report.macro["events"] = display_events
+        report.summary.setdefault("news", {})["upcoming_events"] = display_events
+
+    except Exception as ex:
+        print(f"Official calendar display bridge failed: {ex}")
+
     return {
         "success": True,
         "symbol": symbol,
