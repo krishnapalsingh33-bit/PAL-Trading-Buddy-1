@@ -1,0 +1,58 @@
+name: Wire journal screenshot section
+
+on:
+  push:
+    branches: [online-market-data]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: ${{ !startsWith(github.event.head_commit.message, 'chore: wire journal screenshot section') && !startsWith(github.event.head_commit.message, 'chore: apply journal screenshot wiring') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: online-market-data
+          fetch-depth: 2
+
+      - name: Wire screenshot component
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('frontend/src/pages/JournalTest.tsx')
+          text = path.read_text(encoding='utf-8')
+
+          import_line = 'import TradeScreenshot from "../components/journal/TradeScreenshot";\n'
+          if import_line not in text:
+              anchor = 'import type { JournalTrade } from "../types/journal";\n'
+              text = text.replace(anchor, anchor + import_line, 1)
+
+          marker = '''                        {selectedTrade.comment && ('''
+          insert_after = '''                        {selectedTrade.comment && (\n                            <div className="mt-4 rounded-xl border border-white/[0.05] bg-white/[0.025] p-4 shadow-inner shadow-white/[0.02]">\n                                <div className="text-xs text-zinc-600">\n                                    MT5 Comment\n                                </div>\n\n                                <div className="mt-2 text-sm text-zinc-300">\n                                    {selectedTrade.comment}\n                                </div>\n                            </div>\n                        )}\n\n                        <TradeScreenshot\n                            tradeKey={`${selectedTrade.position_id}-${selectedTrade.exit_ticket}`}\n                        />'''
+
+          if 'tradeKey={`${selectedTrade.position_id}-${selectedTrade.exit_ticket}`}' not in text:
+              start = text.find(marker)
+              if start == -1:
+                  raise SystemExit('Journal modal comment marker not found')
+              end = text.find('                        )}\n                    </div>\n                </div>\n            )}', start)
+              if end == -1:
+                  raise SystemExit('Journal modal closing marker not found')
+              end += len('                        )}')
+              block = text[start:end]
+              if 'selectedTrade.comment' not in block:
+                  raise SystemExit('Unexpected Journal modal structure')
+              text = text[:start] + insert_after + text[end:]
+
+          path.write_text(text, encoding='utf-8')
+      - name: Commit wiring
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/src/pages/JournalTest.tsx
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "chore: apply journal screenshot wiring"
+          git push origin online-market-data
