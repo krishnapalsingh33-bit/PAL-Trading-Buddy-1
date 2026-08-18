@@ -46,7 +46,12 @@ export default function MacroCalendar({ onPageChange }: Props) {
     const { data } = usePAL();
     const [currency, setCurrency] = useState("ALL");
     const [impact, setImpact] = useState("ALL");
-    const [range, setRange] = useState<Range>("TODAY");
+    // The calendar is a forward-looking view. Starting on TODAY hid the
+    // upcoming Aug 19/20 releases whenever the current day had no matching
+    // event, making a healthy feed look empty. ALL means the existing backend
+    // 30-day official schedule is visible immediately; users can still narrow
+    // it to TODAY or TOMORROW.
+    const [range, setRange] = useState<Range>("ALL");
 
     const events = useMemo(() => {
         const raw = [...(data?.report?.news?.upcoming_events ?? []), ...(data?.report?.news?.recent_events ?? [])] as EventItem[];
@@ -80,9 +85,9 @@ export default function MacroCalendar({ onPageChange }: Props) {
                     <div className="flex flex-wrap gap-2">
                         {(["TODAY", "TOMORROW", "ALL"] as const).map((item) => <button key={item} type="button" onClick={() => setRange(item)} className={`rounded-lg border px-3 py-1.5 text-xs ${range === item ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-200" : "border-zinc-800 text-zinc-500"}`}>{item}</button>)}
                         <div className="mx-1 hidden w-px bg-zinc-800 sm:block" />
-                        {(["ALL", "USD", "GBP", "EUR", "JPY"] as const).map((item) => <button key={item} type="button" onClick={() => setCurrency(item)} className={`rounded-lg border px-3 py-1.5 text-xs ${currency === item ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-200" : "border-zinc-800 text-zinc-500"}`}>{item}</button>)}
+                        {["ALL", "USD", "GBP", "EUR", "JPY"].map((item) => <button key={item} type="button" onClick={() => setCurrency(item)} className={`rounded-lg border px-3 py-1.5 text-xs ${currency === item ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-200" : "border-zinc-800 text-zinc-500"}`}>{item}</button>)}
                         <div className="mx-1 hidden w-px bg-zinc-800 sm:block" />
-                        {(["ALL", "HIGH", "MEDIUM", "LOW"] as const).map((item) => <button key={item} type="button" onClick={() => setImpact(item)} className={`rounded-lg border px-3 py-1.5 text-xs ${impact === item ? "border-amber-400/30 bg-amber-400/10 text-amber-200" : "border-zinc-800 text-zinc-500"}`}>{item}</button>)}
+                        {["ALL", "HIGH", "MEDIUM", "LOW"].map((item) => <button key={item} type="button" onClick={() => setImpact(item)} className={`rounded-lg border px-3 py-1.5 text-xs ${impact === item ? "border-amber-400/30 bg-amber-400/10 text-amber-200" : "border-zinc-800 text-zinc-500"}`}>{item}</button>)}
                     </div>
                 </section>
 
