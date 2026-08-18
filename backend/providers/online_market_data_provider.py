@@ -20,6 +20,10 @@ class YahooMarketDataProvider(MarketDataProvider):
         "https://query1.finance.yahoo.com/v8/finance/chart",
         "https://query2.finance.yahoo.com/v8/finance/chart",
     )
+    QUOTE_URLS = (
+        "https://query1.finance.yahoo.com/v7/finance/quote",
+        "https://query2.finance.yahoo.com/v7/finance/quote",
+    )
     SOURCE = "Yahoo Finance"
 
     SYMBOL_MAP = {
@@ -127,8 +131,106 @@ class YahooMarketDataProvider(MarketDataProvider):
                 return payload
             except Exception as exc:
                 last_error = exc
-                logger.warning("Yahoo endpoint failed: %s (%s)", base_url, exc)
-        raise RuntimeError(f"All Yahoo market endpoints failed: {last_error}")
+                logger.warning("Yahoo chart endpoint failed: %s (%s)", base_url, exc)
+        raise RuntimeError(f"All Yahoo chart endpoints failed: {last_error}")
+
+    def _request_quote(self, yahoo_symbol: str) -> dict[str, Any]:
+        last_error: Exception | None = None
+        for base_url in self.QUOTE_URLS:
+            try:
+                response = self.session.get(
+                    base_url,
+                    params={"symbols": yahoo_symbol},
+                    timeout=self.timeout_seconds,
+                )
+                response.raise_for_status()
+                payload = response.json()
+                results = ((payload.get("quoteResponse") or {}).get("result") or [])
+                if results:
+                    return results[0]
+                raise RuntimeError("Yahoo quote endpoint returned no result.")
+            except Exception as exc:
+                last_error = exc
+                logger.warning("Yahoo quote endpoint failed: %s (%s)", base_url, exc)
+        raise RuntimeError(f"All Yahoo quote endpoints failed: {last_error}")
+
+    def _quote_from_chart(self, normalized: str, yahoo_symbol: str) -> MarketQuote:
+        payload = self._request_chart(yahoo_symbol)
+        results = (payload.get("chart") or {}).get("result") or []
+        if not results:
+            raise RuntimeError("Yahoo Finance returned no quote data.")
+
+        result = results[0]
+        meta = result.get("meta") or {}
+        price = self._number(
+            meta.get("regularMarketPrice")
+            or meta.get("postMarketPrice")
+            or meta.get("preMarketPrice")
+        )
+        previous = self._number(meta.get("previousClose") or meta.get("chartPreviousClose"))
+
+        timestamps = result.get("timestamp") or []
+        quote_rows = (result.get("indicators") or {}).get("quote") or []
+        closes = quote_rows[0].get("close", []) if quote_rows else []
+
+        if price is None:
+            for close in reversed(closes):
+                price = self._number(close)
+                if price is not None:
+                    break
+
+        if previous is None and len(closes) >= 2:
+            for close in reversed(closes[:-1]):
+                previous = self._number(close)
+                if previous is not None:
+                    break
+
+        if price is None:
+            raise RuntimeError("Yahoo Finance returned no current price.")
+
+        market_time = self._timestamp(
+            meta.get("regularMarketTime") or (timestamps[-1] if timestamps else None)
+        )
+        return self._build_quote(normalized, price, previous, market_time)
+
+    def _quote_from_quote_endpoint(self, normalized: str, yahoo_symbol: str) -> MarketQuote:
+        row = self._request_quote(yahoo_symbol)
+        price = self._number(
+            row.get("regularMarketPrice")
+            or row.get("postMarketPrice")
+            or row.get("preMarketPrice")
+        )
+        previous = self._number(row.get("regularMarketPreviousClose") or row.get("previousClose"))
+        market_time = self._timestamp(row.get("regularMarketTime"))
+        if price is None:
+            raise RuntimeError("Yahoo quote endpoint returned no current price.")
+        return self._build_quote(normalized, price, previous, market_time)
+
+    def _build_quote(
+        self,
+        normalized: str,
+        price: float,
+        previous: float | None,
+        market_time: str | None,
+    ) -> MarketQuote:
+        change = price - previous if previous is not None else None
+        change_percent = (
+            (change / previous) * 100
+            if change is not None and previous not in (None, 0)
+            else None
+        )
+        unit = "yield_percent" if normalized in {"US10Y", "10Y", "TNX"} else "price"
+        return MarketQuote(
+            symbol=normalized,
+            price=price,
+            previous_price=previous,
+            change=change,
+            change_percent=change_percent,
+            timestamp=market_time,
+            source=self.SOURCE,
+            status=self._status(market_time),
+            unit=unit,
+        )
 
     def get_quote(self, symbol: str) -> MarketQuote:
         normalized = symbol.upper()
@@ -143,56 +245,25 @@ class YahooMarketDataProvider(MarketDataProvider):
             )
 
         try:
-            payload = self._request_chart(yahoo_symbol)
-            results = (payload.get("chart") or {}).get("result") or []
-            if not results:
-                raise RuntimeError("Yahoo Finance returned no quote data.")
-
-            result = results[0]
-            meta = result.get("meta") or {}
-            price = self._number(meta.get("regularMarketPrice") or meta.get("postMarketPrice") or meta.get("preMarketPrice"))
-            previous = self._number(meta.get("previousClose") or meta.get("chartPreviousClose"))
-
-            timestamps = result.get("timestamp") or []
-            quote_rows = (result.get("indicators") or {}).get("quote") or []
-            closes = quote_rows[0].get("close", []) if quote_rows else []
-
-            if price is None:
-                for close in reversed(closes):
-                    price = self._number(close)
-                    if price is not None:
-                        break
-
-            if previous is None and len(closes) >= 2:
-                for close in reversed(closes[:-1]):
-                    previous = self._number(close)
-                    if previous is not None:
-                        break
-
-            if price is None:
-                raise RuntimeError("Yahoo Finance returned no current price.")
-
-            change = price - previous if previous is not None else None
-            change_percent = (change / previous) * 100 if change is not None and previous not in (None, 0) else None
-            market_time = self._timestamp(meta.get("regularMarketTime") or (timestamps[-1] if timestamps else None))
-            unit = "yield_percent" if normalized in {"US10Y", "10Y", "TNX"} else "price"
-
-            return MarketQuote(
-                symbol=normalized,
-                price=price,
-                previous_price=previous,
-                change=change,
-                change_percent=change_percent,
-                timestamp=market_time,
-                source=self.SOURCE,
-                status=self._status(market_time),
-                unit=unit,
+            return self._quote_from_chart(normalized, yahoo_symbol)
+        except Exception as chart_exc:
+            logger.warning(
+                "Yahoo chart provider failed for %s (%s); trying quote endpoint.",
+                normalized,
+                chart_exc,
             )
-        except Exception as exc:
-            logger.warning("Online market provider failed for %s (%s): %s", normalized, yahoo_symbol, exc)
-            return MarketQuote(
-                symbol=normalized,
-                source=self.SOURCE,
-                status="UNAVAILABLE",
-                reason="Online market data is temporarily unavailable.",
-            )
+            try:
+                return self._quote_from_quote_endpoint(normalized, yahoo_symbol)
+            except Exception as quote_exc:
+                logger.warning(
+                    "Online market provider failed for %s (%s): %s",
+                    normalized,
+                    yahoo_symbol,
+                    quote_exc,
+                )
+                return MarketQuote(
+                    symbol=normalized,
+                    source=self.SOURCE,
+                    status="UNAVAILABLE",
+                    reason="Online market data is temporarily unavailable.",
+                )
