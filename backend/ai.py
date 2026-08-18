@@ -12,14 +12,9 @@ client = OpenAI(
 
 def ask_ai(prompt):
 
-    response = client.chat.completions.create(
-        model="gpt-5.5",
-        messages=[
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ]
+    response = client.responses.create(
+        model="gpt-5.6",
+        input=prompt,
     )
 
-    return response.choices[0].message.content
+    return response.output_text
