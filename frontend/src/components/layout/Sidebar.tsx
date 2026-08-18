@@ -16,11 +16,11 @@ type Props = {
 
 const NAV_ITEMS: Array<{ page: Page; label: string; icon: string }> = [
     { page: "dashboard", label: "Dashboard", icon: "⌂" },
+    { page: "journal", label: "Journal", icon: "▣" },
     { page: "macro-desk", label: "Macro Desk", icon: "✦" },
     { page: "macro-view", label: "Macro View", icon: "◈" },
     { page: "macro-calendar", label: "Macro Calendar", icon: "□" },
     { page: "reports", label: "Daily Reports", icon: "▤" },
-    { page: "journal", label: "Journal", icon: "▣" },
 ];
 
 function Sidebar({ symbol, activePage = "dashboard", onPageChange }: Props) {
@@ -50,9 +50,7 @@ function Sidebar({ symbol, activePage = "dashboard", onPageChange }: Props) {
                                     : "text-zinc-400 hover:bg-zinc-900 hover:text-white"
                             }`}
                         >
-                            <span className="flex h-6 w-6 items-center justify-center text-sm text-emerald-300/80">
-                                {icon}
-                            </span>
+                            <span className="flex h-6 w-6 items-center justify-center text-sm text-emerald-300/80">{icon}</span>
                             <span className="text-sm font-medium">{label}</span>
                         </button>
                     );
@@ -60,9 +58,7 @@ function Sidebar({ symbol, activePage = "dashboard", onPageChange }: Props) {
             </nav>
 
             <div className="border-t border-zinc-800 p-5">
-                <p className="mb-3 text-xs uppercase tracking-widest text-zinc-500">
-                    Active Symbol
-                </p>
+                <p className="mb-3 text-xs uppercase tracking-widest text-zinc-500">Active Symbol</p>
                 <Badge text={symbol} />
             </div>
         </aside>
