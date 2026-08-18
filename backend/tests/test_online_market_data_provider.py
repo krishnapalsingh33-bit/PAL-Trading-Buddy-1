@@ -1,3 +1,4 @@
+import time
 import unittest
 
 from providers.online_market_data_provider import YahooMarketDataProvider
@@ -33,6 +34,7 @@ class YahooMarketDataProviderTests(unittest.TestCase):
         self.assertEqual(YahooMarketDataProvider.yahoo_symbol("US500"), "^GSPC")
 
     def test_normalizes_quote_and_calculates_change(self):
+        now = int(time.time())
         payload = {
             "chart": {
                 "error": None,
@@ -40,9 +42,9 @@ class YahooMarketDataProviderTests(unittest.TestCase):
                     "meta": {
                         "regularMarketPrice": 1.35,
                         "previousClose": 1.34,
-                        "regularMarketTime": 1760000000,
+                        "regularMarketTime": now,
                     },
-                    "timestamp": [1760000000],
+                    "timestamp": [now],
                     "indicators": {"quote": [{"close": [1.35]}]},
                 }],
             }
