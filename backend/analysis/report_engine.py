@@ -46,7 +46,7 @@ class ReportEngine:
         key_risk = news.get("key_risk", "No major scheduled macro catalyst currently identified.")
         macro_bias = news.get("macro_bias", {})
         macro_data = news.get("macro_data", {})
-        markets = news.get("markets", {})
+        markets = self._normalize_markets(news.get("markets", {}))
 
         dxy_bias = macro_bias.get("dxy", {})
         gbp_bias = macro_bias.get("gbp", {})
@@ -109,6 +109,10 @@ class ReportEngine:
             "macro_data": macro_data,
         }
 
+        # Explicit feed health for the frontend. Do not make the UI infer
+        # connectivity from unrelated macro-bias fields.
+        report.market_health = self._market_health(markets)
+
         report.execution = {}
         report.ai_commentary = {}
 
@@ -116,7 +120,7 @@ class ReportEngine:
             "market": {
                 "symbol": symbol.upper(),
                 "bias": gbpusd_bias.get("bias", "UNKNOWN"),
-                "health": "MONITORING",
+                "health": report.market_health["status"],
             },
             "news": {
                 "summary": news.get("summary", ""),
@@ -140,6 +144,56 @@ class ReportEngine:
         }
 
         return report
+
+    @staticmethod
+    def _normalize_markets(markets: Any) -> dict[str, dict]:
+        if not isinstance(markets, dict):
+            return {}
+
+        normalized: dict[str, dict] = {}
+        for symbol, raw in markets.items():
+            if not isinstance(raw, dict):
+                continue
+            item = dict(raw)
+            change_percent = item.get("change_percent")
+            # The frontend historically consumed change_pct/percent_change.
+            # Keep the canonical backend field and provide compatibility aliases.
+            item.setdefault("change_pct", change_percent)
+            item.setdefault("percent_change", change_percent)
+            normalized[str(symbol).upper()] = item
+        return normalized
+
+    @staticmethod
+    def _market_health(markets: dict[str, dict]) -> dict[str, Any]:
+        if not markets:
+            return {
+                "status": "UNAVAILABLE",
+                "score": 0,
+                "summary": "No market quotes were returned by the live provider.",
+            }
+
+        statuses = [str(item.get("status", "UNAVAILABLE")).upper() for item in markets.values()]
+        live_count = sum(status in {"CURRENT", "RECENT"} for status in statuses)
+        stale_count = sum(status == "STALE" for status in statuses)
+
+        if live_count:
+            score = round(live_count / len(statuses) * 100)
+            status = "LIVE" if live_count == len(statuses) else "PARTIAL"
+            summary = f"{live_count}/{len(statuses)} market feeds are live or recent."
+        elif stale_count:
+            score = round(stale_count / len(statuses) * 100)
+            status = "STALE"
+            summary = f"All live market requests failed; {stale_count}/{len(statuses)} feeds have stale cached data."
+        else:
+            score = 0
+            status = "UNAVAILABLE"
+            summary = "The live market provider returned no usable quotes."
+
+        return {
+            "status": status,
+            "score": score,
+            "summary": summary,
+        }
 
     @staticmethod
     def _build_macro_headline(news: dict[str, Any], headlines: list[dict], upcoming_events: list[dict]) -> str:
