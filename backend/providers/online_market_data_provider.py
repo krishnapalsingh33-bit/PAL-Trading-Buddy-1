@@ -33,6 +33,7 @@ class YahooMarketDataProvider(MarketDataProvider):
         "XAUUSD": "GC=F", "GOLD": "GC=F", "XAU/USD": "GC=F",
         "USOIL": "CL=F", "WTI": "CL=F", "OIL": "CL=F", "XTIUSD": "CL=F",
         "US10Y": "^TNX", "10Y": "^TNX", "TNX": "^TNX",
+        "VIX": "^VIX", "VIXCLS": "^VIX",
         "US500": "^GSPC", "SPX": "^GSPC", "SP500": "^GSPC",
     }
 
