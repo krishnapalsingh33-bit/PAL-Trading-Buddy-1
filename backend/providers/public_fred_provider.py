@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import csv
 import io
-from datetime import datetime, timezone
 from typing import Any
 
 import requests
@@ -39,35 +38,31 @@ class PublicFredProvider:
             return None
 
     def get_snapshot(self) -> dict[str, list[dict[str, Any]]]:
-        response = self.session.get(
-            self.URL,
-            params={"id": ",".join(self.SERIES.values())},
-            timeout=self.timeout_seconds,
-        )
-        response.raise_for_status()
+        observations: dict[str, list[dict[str, Any]]] = {}
+        for name, series_id in self.SERIES.items():
+            response = self.session.get(
+                self.URL,
+                params={"id": series_id},
+                timeout=self.timeout_seconds,
+            )
+            response.raise_for_status()
 
-        reader = csv.DictReader(io.StringIO(response.text))
-        rows_by_series = {name: [] for name in self.SERIES}
-        reverse = {series_id: name for name, series_id in self.SERIES.items()}
-
-        for row in reader:
-            date = str(row.get("observation_date", "")).strip()
-            if not date:
-                continue
-            try:
-                datetime.fromisoformat(date).replace(tzinfo=timezone.utc)
-            except ValueError:
-                continue
-
-            for series_id, name in reverse.items():
+            reader = csv.DictReader(io.StringIO(response.text))
+            rows: list[dict[str, Any]] = []
+            for row in reader:
+                date = str(row.get("observation_date", "")).strip()
                 value = self._number(row.get(series_id))
-                if value is None:
+                if not date or value is None:
                     continue
-                rows_by_series[name].append({
+                rows.append({
                     "date": date,
                     "value": value,
                     "source": "Federal Reserve Bank of St. Louis / FRED",
                     "series": series_id,
                 })
+            if rows:
+                observations[name] = rows[-24:]
 
-        return {name: rows for name, rows in rows_by_series.items() if rows}
+        if not observations:
+            raise RuntimeError("Public FRED returned no usable observations.")
+        return observations
