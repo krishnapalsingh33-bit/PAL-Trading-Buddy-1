@@ -28,6 +28,21 @@ export interface MacroBias {
     bearish?: boolean | null;
 }
 
+export interface MacroObservation {
+    date?: string | null;
+    period?: string | null;
+    year?: string | null;
+    value: number;
+    source: string;
+    dataset?: string;
+}
+
+export interface MacroDataSnapshot {
+    fetched_at: string | null;
+    source_status: Record<string, string>;
+    observations: Record<string, MacroObservation[]>;
+}
+
 export interface PALResponse {
     success: boolean;
     symbol: string;
@@ -48,6 +63,7 @@ export interface PALResponse {
             cross_news: Array<Record<string, unknown>>;
             bias_summary: string;
             markets: Record<string, MarketQuote>;
+            macro_data?: MacroDataSnapshot;
         };
         news: {
             summary: string;
@@ -62,6 +78,7 @@ export interface PALResponse {
             cross: Array<Record<string, unknown>>;
             macro_bias: Record<string, unknown>;
             markets: Record<string, MarketQuote>;
+            macro_data?: MacroDataSnapshot;
         };
         market_health?: {
             status: string;
