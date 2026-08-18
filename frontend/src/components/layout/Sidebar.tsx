@@ -11,7 +11,7 @@ export type Page =
 type Props = {
     symbol: string;
     activePage?: Page;
-    onPageChange?: (page: Page) => void;
+    onPageChange?(page: Page): void;
 };
 
 const NAV_ITEMS: Array<{ page: Page; label: string; icon: string }> = [
@@ -35,32 +35,13 @@ function Sidebar({ symbol, activePage = "dashboard", onPageChange }: Props) {
                 <h1 className="text-3xl font-bold text-white">PAL</h1>
                 <p className="mt-2 text-sm text-zinc-500">Trading Buddy</p>
             </div>
-
             <nav className="flex-1 space-y-2 overflow-y-auto p-4">
                 {NAV_ITEMS.map(({ page, label, icon }) => {
                     const active = activePage === page;
-                    return (
-                        <button
-                            key={page}
-                            type="button"
-                            onClick={() => navigate(page)}
-                            className={`flex w-full items-center gap-3 rounded-xl p-3 text-left transition ${
-                                active
-                                    ? "bg-zinc-800 text-white shadow-[inset_2px_0_0_rgba(52,211,153,.9)]"
-                                    : "text-zinc-400 hover:bg-zinc-900 hover:text-white"
-                            }`}
-                        >
-                            <span className="flex h-6 w-6 items-center justify-center text-sm text-emerald-300/80">{icon}</span>
-                            <span className="text-sm font-medium">{label}</span>
-                        </button>
-                    );
+                    return <button key={page} type="button" onClick={() => navigate(page)} className={`flex w-full items-center gap-3 rounded-xl p-3 text-left transition ${active ? "bg-zinc-800 text-white shadow-[inset_2px_0_0_rgba(52,211,153,.9)]" : "text-zinc-400 hover:bg-zinc-900 hover:text-white"}`}><span className="flex h-6 w-6 items-center justify-center text-sm text-emerald-300/80">{icon}</span><span className="text-sm font-medium">{label}</span></button>;
                 })}
             </nav>
-
-            <div className="border-t border-zinc-800 p-5">
-                <p className="mb-3 text-xs uppercase tracking-widest text-zinc-500">Active Symbol</p>
-                <Badge text={symbol} />
-            </div>
+            <div className="border-t border-zinc-800 p-5"><p className="mb-3 text-xs uppercase tracking-widest text-zinc-500">Active Symbol</p><Badge text={symbol} /></div>
         </aside>
     );
 }
