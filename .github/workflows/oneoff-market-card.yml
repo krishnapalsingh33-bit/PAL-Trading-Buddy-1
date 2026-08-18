@@ -1,0 +1,113 @@
+name: One-off market card integration
+
+on:
+  push:
+    branches:
+      - online-market-data
+
+permissions:
+  contents: write
+
+jobs:
+  patch-dashboard:
+    if: ${{ !contains(github.event.head_commit.message, 'MARKET-CARD-PATCHED') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Patch MacroDeskCard
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('frontend/src/pages/Dashboard.tsx')
+          text = path.read_text()
+
+          old = '''            <div className="relative mt-5 flex items-end justify-between gap-3">
+                <div>
+                    <div className="text-xl font-semibold tracking-tight text-white">
+                        {hasChange
+    ? displayMarketChange(change)
+    : "Fundamental macro bias"}
+                    </div>
+
+                    <div
+                        className={`mt-1 text-[10px] font-medium ${
+                            hasChange
+                                ? changeValueClass(change)
+                                : bias === "BULLISH"
+                                  ? "text-emerald-300"
+                                  : bias === "BEARISH"
+                                    ? "text-red-300"
+                                    : "text-zinc-500"
+                        }`}
+                    >
+                        {hasChange
+                            ? displayMarketChange(change)
+                            : `${bias} fundamental bias`}
+                    </div>
+                </div>
+'''
+
+          new = '''            <div className="relative mt-5 flex items-end justify-between gap-3">
+                <div>
+                    <div className="text-xl font-semibold tracking-tight text-white">
+                        {hasPrice
+                            ? displayMarketNumber(market.price, 2)
+                            : "Data unavailable"}
+                    </div>
+
+                    <div
+                        className={`mt-1 text-[10px] font-medium ${
+                            hasChange
+                                ? changeValueClass(change)
+                                : "text-zinc-500"
+                        }`}
+                    >
+                        {hasChange
+                            ? displayMarketChange(change)
+                            : "Change unavailable"}
+                    </div>
+                </div>
+'''
+
+          if old not in text:
+              raise SystemExit('Expected MacroDeskCard block was not found; refusing to modify the file.')
+
+          text = text.replace(old, new, 1)
+
+          old_status = '''            <div className="relative mt-3 min-h-[36px] text-[10px] leading-5 text-zinc-600">
+                {macroOnlyText(
+                    market.reason,
+                    hasPrice
+                        ? "Live market data supplied by the macro feed."
+                        : "Fundamental direction supplied by PAL macro intelligence. Live price data is not currently connected.",
+                )}
+            </div>
+'''
+
+          new_status = '''            <div className="relative mt-3 min-h-[36px] text-[10px] leading-5 text-zinc-600">
+                {market.status
+                    ? String(market.status).replaceAll("_", " ")
+                    : hasPrice
+                      ? "Live market data supplied by the macro feed."
+                      : "Data temporarily unavailable."}
+                {market.reason ? ` · ${macroOnlyText(market.reason, "")}` : ""}
+            </div>
+'''
+
+          if old_status not in text:
+              raise SystemExit('Expected market status block was not found; refusing to modify the file.')
+
+          text = text.replace(old_status, new_status, 1)
+          path.write_text(text)
+          PY
+
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/src/pages/Dashboard.tsx
+          git diff --cached --quiet && exit 0
+          git commit -m "Render real market values in macro desk MARKET-CARD-PATCHED"
+          git push
