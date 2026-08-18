@@ -31,6 +31,7 @@ class MacroDataService:
 
         try:
             snapshot["policy"] = self._get_policy(force_refresh=force_refresh)
+            self._merge_fed_policy_observation(snapshot)
         except Exception as exc:
             snapshot["policy"] = {
                 "fetched_at": None,
@@ -41,6 +42,23 @@ class MacroDataService:
         with self._lock:
             self._cache = (datetime.now(timezone.utc), snapshot)
         return snapshot
+
+    @staticmethod
+    def _merge_fed_policy_observation(snapshot: dict) -> None:
+        observations = snapshot.setdefault("observations", {})
+        if observations.get("fed_funds"):
+            return
+        fed = (snapshot.get("policy") or {}).get("fed") or {}
+        rate = fed.get("policy_rate")
+        if rate is None or fed.get("status") != "CURRENT":
+            return
+        observations["fed_funds"] = [{
+            "date": fed.get("release_date") or fed.get("observation_date") or datetime.now(timezone.utc).date().isoformat(),
+            "value": float(rate),
+            "source": fed.get("source") or "Federal Reserve",
+            "unit": "percent",
+        }]
+        snapshot.setdefault("source_status", {})["fred"] = "CURRENT"
 
     def _get_policy(self, force_refresh: bool = False) -> dict:
         with self._lock:
