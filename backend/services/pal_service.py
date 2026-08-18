@@ -5,10 +5,11 @@ from analysis.macro_bias_engine import MacroBiasEngine
 from analysis.report_engine import ReportEngine
 from providers.google_news_provider import GoogleNewsProvider
 from services.market_data_service import MarketDataService
+from services.macro_data_service import MacroDataService
 
 
 class PALService:
-    """PAL macro/news intelligence plus independent market snapshots."""
+    """PAL macro/news intelligence plus independent market and macro snapshots."""
 
     def __init__(self):
         self.news_engine = NewsEngine()
@@ -16,6 +17,7 @@ class PALService:
         self.macro_bias_engine = MacroBiasEngine()
         self.report_engine = ReportEngine()
         self.market_data_service = MarketDataService()
+        self.macro_data_service = MacroDataService()
 
     def analyze(self, symbol: str, news_events: list[dict], current_time: datetime):
         try:
@@ -64,7 +66,18 @@ class PALService:
                 for market_symbol in self.market_data_service.SYMBOLS
             }
 
+        try:
+            macro_data = self.macro_data_service.get_snapshot()
+        except Exception as ex:
+            print(f"Macro data service failed: {ex}")
+            macro_data = {
+                "source_status": {},
+                "observations": {},
+                "fetched_at": None,
+            }
+
         news["macro_bias"] = macro_bias
         news["markets"] = markets
+        news["macro_data"] = macro_data
 
         return self.report_engine.build(symbol=symbol, news=news)
