@@ -10,7 +10,7 @@ import requests
 
 
 class OfficialPolicyProvider:
-    """Read current policy-rate facts from official central-bank data."""
+    """Read current policy-rate facts from structured central-bank data."""
 
     FED_INDEX_URL = "https://www.federalreserve.gov/newsevents/pressreleases/2026-press-fomc.htm"
     FED_FRED_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DFEDTARL,DFEDTARU"
@@ -32,6 +32,16 @@ class OfficialPolicyProvider:
             "fed": self._fed(),
             "boe": self._boe(),
         }
+
+    @staticmethod
+    def _rate_value(value: str) -> float:
+        """Parse Fed rate notation such as 3-1/2 or 3.50."""
+        value = value.strip().replace("−", "-")
+        if re.fullmatch(r"\d+-\d+/\d+", value):
+            whole, fraction = value.split("-", 1)
+            numerator, denominator = fraction.split("/", 1)
+            return float(whole) + (float(numerator) / float(denominator))
+        return float(value)
 
     def _fed(self) -> dict[str, Any]:
         # Primary: official FOMC statement. The statement is the authoritative
@@ -55,23 +65,33 @@ class OfficialPolicyProvider:
             statement.raise_for_status()
             text = self._clean(statement.text)
 
+            # Fed statements commonly use fractional notation: "3-1/2 to
+            # 3-3/4 percent". Also accept decimal/range variants.
+            number = r"(?:\d+(?:\.\d+)?|\d+-\d+/\d+)"
             match = re.search(
-                r"target range for the federal funds rate at\s*(\d+(?:\.\d+)?)\s*(?:to|–|-)\s*(\d+(?:\.\d+)?)\s*percent",
+                rf"target range for the federal funds rate at\s*({number})\s*(?:to|–|-)\s*({number})\s*percent",
                 text,
                 re.I,
             )
             if not match:
                 raise RuntimeError("The latest official FOMC statement did not contain a target range.")
 
-            lower = float(match.group(1))
-            upper = float(match.group(2))
+            lower = self._rate_value(match.group(1))
+            upper = self._rate_value(match.group(2))
             vote = None
-            vote_match = re.search(r"approved the following statement for release by a\s*(\d+)\s*[–-]\s*(\d+)\s*vote", text, re.I)
+            vote_match = re.search(
+                r"approved the following statement for release by a\s*(\d+)\s*[–-]\s*(\d+)\s*vote",
+                text,
+                re.I,
+            )
             if vote_match:
                 vote = {"for": int(vote_match.group(1)), "against": int(vote_match.group(2))}
 
             release_date = None
-            date_match = re.search(r"(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+2026", text)
+            date_match = re.search(
+                r"(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+2026",
+                text,
+            )
             if date_match:
                 release_date = date_match.group(0)
 
