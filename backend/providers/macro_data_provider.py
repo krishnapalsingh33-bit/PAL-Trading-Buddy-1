@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import csv
+import io
 import logging
 import os
 import re
@@ -54,11 +56,7 @@ class MacroDataProvider:
         })
 
     def get_snapshot(self) -> dict[str, Any]:
-        snapshot = {
-            "source_status": {},
-            "observations": {},
-            "fetched_at": datetime.now(timezone.utc).isoformat(),
-        }
+        snapshot = {"source_status": {}, "observations": {}, "fetched_at": datetime.now(timezone.utc).isoformat()}
         self._load_bls(snapshot)
         self._load_ons(snapshot)
         self._load_fred(snapshot)
@@ -85,23 +83,18 @@ class MacroDataProvider:
                     status = "CURRENT" if observations else "UNAVAILABLE"
                 except Exception as v2_exc:
                     logger.warning("BLS macro provider unavailable: %s", v2_exc)
-                    observations = {}
-                    status = "UNAVAILABLE"
+                    observations, status = {}, "UNAVAILABLE"
             self._bls_cache = (now, observations, status)
             snapshot["observations"].update(observations)
             snapshot["source_status"]["bls"] = status
 
     def _bls_batch(self, version: str) -> dict[str, list[dict[str, Any]]]:
         base = self.BLS_V1_URL if version == "v1" else self.BLS_V2_URL
-        payload: dict[str, Any] = {
-            "seriesid": list(self.BLS_SERIES.values()),
-            "startyear": "2025",
-            "endyear": "2026",
-        }
+        payload: dict[str, Any] = {"seriesid": list(self.BLS_SERIES.values()), "startyear": "2025", "endyear": "2026"}
         if version == "v2":
-            registration_key = os.getenv("BLS_REGISTRATION_KEY", "").strip()
-            if registration_key:
-                payload["registrationkey"] = registration_key
+            key = os.getenv("BLS_REGISTRATION_KEY", "").strip()
+            if key:
+                payload["registrationkey"] = key
         response = self.session.post(base, json=payload, timeout=self.timeout_seconds)
         response.raise_for_status()
         body = response.json() or {}
@@ -120,17 +113,9 @@ class MacroDataProvider:
                 continue
             rows = []
             for item in series.get("data") or []:
-                if not isinstance(item, dict):
-                    continue
-                value = self._number(item.get("value"))
+                value = self._number(item.get("value")) if isinstance(item, dict) else None
                 if value is not None:
-                    rows.append({
-                        "period": item.get("periodName"),
-                        "year": item.get("year"),
-                        "value": value,
-                        "date": self._bls_date(item),
-                        "source": "U.S. Bureau of Labor Statistics",
-                    })
+                    rows.append({"period": item.get("periodName"), "year": item.get("year"), "value": value, "date": self._bls_date(item), "source": "U.S. Bureau of Labor Statistics"})
             if rows:
                 observations[key] = rows
         return observations
@@ -149,18 +134,17 @@ class MacroDataProvider:
                 status = "CURRENT" if rows else "UNAVAILABLE"
             except Exception as exc:
                 logger.warning("ONS macro provider failed: %s", exc)
-                rows = []
-                status = "UNAVAILABLE"
+                rows, status = [], "UNAVAILABLE"
             self._ons_cache = (now, rows, status)
             snapshot["observations"]["uk_cpih"] = rows
             snapshot["source_status"]["ons"] = status
 
     def _fetch_ons_cpih(self) -> list[dict[str, Any]]:
-        """Fetch the latest 24 CPIH months using the documented single-time observation API."""
+        """Fetch CPIH from the latest ONS release, with API observation and CSV fallbacks."""
         dataset = self.session.get(self.ONS_DATASET_URL, timeout=self.timeout_seconds)
         dataset.raise_for_status()
-        dataset_body = dataset.json() or {}
-        latest = (dataset_body.get("links") or {}).get("latest_version") or {}
+        body = dataset.json() or {}
+        latest = (body.get("links") or {}).get("latest_version") or {}
         latest_href = latest.get("href") if isinstance(latest, dict) else None
         if not latest_href:
             raise RuntimeError("ONS CPIH dataset did not expose a latest_version link.")
@@ -169,59 +153,83 @@ class MacroDataProvider:
             raise RuntimeError(f"Unable to determine ONS CPIH version from {latest_href!r}.")
         version = int(match.group(1))
 
-        options_url = f"{latest_href.rstrip('/')}/dimensions/time/options"
+        try:
+            return self._fetch_ons_observations(latest_href.rstrip("/"), version)
+        except Exception as observation_exc:
+            logger.warning("ONS observation API failed, trying release CSV: %s", observation_exc)
+            return self._fetch_ons_csv(latest_href.rstrip("/"), version)
+
+    def _fetch_ons_observations(self, latest_href: str, version: int) -> list[dict[str, Any]]:
+        options_url = f"{latest_href}/dimensions/time/options"
         response = self.session.get(options_url, params={"limit": 1000}, timeout=self.timeout_seconds)
         response.raise_for_status()
-        options_body = response.json() or {}
-        options = options_body.get("items") or []
-        dated_options: list[tuple[datetime, str]] = []
-        current_year = datetime.now(timezone.utc).year
-        for item in options:
+        items = (response.json() or {}).get("items") or []
+        dated: list[tuple[datetime, str]] = []
+        for item in items:
             if not isinstance(item, dict):
                 continue
             label = item.get("label") or item.get("option") or item.get("id")
-            if not isinstance(label, str):
-                continue
-            label = label.strip()
-            if not re.fullmatch(r"[A-Za-z]{3}-\d{2}", label):
-                continue
-            try:
-                dated_options.append((self._ons_month_key(label), label))
-            except ValueError:
-                continue
-
-        if not dated_options:
+            if isinstance(label, str) and re.fullmatch(r"[A-Za-z]{3}-\d{2}", label.strip()):
+                try:
+                    dated.append((self._ons_month_key(label.strip()), label.strip()))
+                except ValueError:
+                    pass
+        if not dated:
             raise RuntimeError(f"ONS CPIH version {version} returned no usable time options.")
+        labels = [label for _, label in sorted(dated)[-24:]]
+        url = f"{latest_href}/observations"
+        rows = []
+        for label in labels:
+            r = self.session.get(url, params={"time": label, "geography": "K02000001", "aggregate": "cpih1dim1A0"}, timeout=self.timeout_seconds)
+            r.raise_for_status()
+            obs = (r.json() or {}).get("observations") or []
+            if obs:
+                value = self._number(obs[0].get("observation"))
+                if value is not None:
+                    rows.append({"date": label, "value": value, "source": "UK Office for National Statistics", "dataset": "CPIH", "version": version})
+        rows.sort(key=lambda row: self._ons_month_key(row["date"]))
+        if not rows:
+            raise RuntimeError("ONS observation API returned no CPIH values.")
+        return rows
 
-        latest_labels = [label for _, label in sorted(dated_options)[-24:]]
-        observation_url = f"{latest_href.rstrip('/')}/observations"
-        rows: list[dict[str, Any]] = []
-        for label in latest_labels:
-            response = self.session.get(
-                observation_url,
-                params={
-                    "time": label,
-                    "geography": "K02000001",
-                    "aggregate": "cpih1dim1A0",
-                },
-                timeout=self.timeout_seconds,
-            )
-            response.raise_for_status()
-            observations = (response.json() or {}).get("observations") or []
-            if not observations:
+    def _fetch_ons_csv(self, latest_href: str, version: int) -> list[dict[str, Any]]:
+        version_response = self.session.get(latest_href, timeout=self.timeout_seconds)
+        version_response.raise_for_status()
+        body = version_response.json() or {}
+        downloads = body.get("downloads") or {}
+        csv_info = downloads.get("csv") or {}
+        csv_url = csv_info.get("href") if isinstance(csv_info, dict) else None
+        if not csv_url:
+            raise RuntimeError("ONS CPIH latest version did not expose a CSV download link.")
+        response = self.session.get(csv_url, timeout=max(self.timeout_seconds, 20.0))
+        response.raise_for_status()
+        text = response.text
+        if not text:
+            raise RuntimeError("ONS CPIH CSV download was empty.")
+        reader = csv.DictReader(io.StringIO(text))
+        rows = []
+        for item in reader:
+            if not isinstance(item, dict):
                 continue
-            value = self._number(observations[0].get("observation"))
+            normal = {str(k).strip().lower(): (v.strip() if isinstance(v, str) else v) for k, v in item.items() if k is not None}
+            time_label = normal.get("time") or normal.get("date") or normal.get("period")
+            geography = normal.get("geography") or normal.get("geography code")
+            aggregate = normal.get("aggregate") or normal.get("aggregate code")
+            value_raw = normal.get("value") or normal.get("observation")
+            if not time_label or not re.fullmatch(r"[A-Za-z]{3}-\d{2}", str(time_label)):
+                continue
+            if geography and geography != "K02000001":
+                continue
+            if aggregate and aggregate != "cpih1dim1A0":
+                continue
+            value = self._number(value_raw)
             if value is None:
                 continue
-            rows.append({
-                "date": label,
-                "value": value,
-                "source": "UK Office for National Statistics",
-                "dataset": "CPIH",
-                "version": version,
-            })
-
+            rows.append({"date": str(time_label), "value": value, "source": "UK Office for National Statistics", "dataset": "CPIH", "version": version})
         rows.sort(key=lambda row: self._ons_month_key(row["date"]))
+        rows = rows[-24:]
+        if not rows:
+            raise RuntimeError("ONS CPIH CSV contained no matching CPIH rows.")
         return rows
 
     @staticmethod
@@ -240,17 +248,7 @@ class MacroDataProvider:
         try:
             observations = {}
             for key, series_id in self.FRED_SERIES.items():
-                response = self.session.get(
-                    self.FRED_URL,
-                    params={
-                        "series_id": series_id,
-                        "api_key": api_key,
-                        "file_type": "json",
-                        "sort_order": "asc",
-                        "limit": 24,
-                    },
-                    timeout=self.timeout_seconds,
-                )
+                response = self.session.get(self.FRED_URL, params={"series_id": series_id, "api_key": api_key, "file_type": "json", "sort_order": "asc", "limit": 24}, timeout=self.timeout_seconds)
                 response.raise_for_status()
                 rows = []
                 for item in (response.json() or {}).get("observations") or []:
