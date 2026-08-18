@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Any
 
@@ -20,7 +21,6 @@ class MacroDataProvider:
         "https://api.beta.ons.gov.uk/v1/datasets/cpih01/editions/time-series/versions/{version}/observations"
     )
 
-    # Public BLS series. No API key is required for ordinary requests.
     BLS_SERIES = {
         "us_cpi": "CUSR0000SA0",
         "us_core_cpi": "CUSR0000SA0L1E",
@@ -29,8 +29,6 @@ class MacroDataProvider:
         "us_average_hourly_earnings": "CES0500000003",
     }
 
-    # FRED is optional because its API requires a key. If configured, these add
-    # rates/curve information; PAL still works without them.
     FRED_SERIES = {
         "fed_funds": "FEDFUNDS",
         "us_2y": "DGS2",
@@ -39,7 +37,7 @@ class MacroDataProvider:
         "vix": "VIXCLS",
     }
 
-    def __init__(self, timeout_seconds: float = 10.0) -> None:
+    def __init__(self, timeout_seconds: float = 5.0) -> None:
         self.timeout_seconds = timeout_seconds
         self.session = requests.Session()
         self.session.headers.update(
@@ -55,50 +53,59 @@ class MacroDataProvider:
             "observations": {},
             "fetched_at": datetime.now(timezone.utc).isoformat(),
         }
-
         self._load_bls(snapshot)
         self._load_ons(snapshot)
         self._load_fred(snapshot)
         return snapshot
 
     def _load_bls(self, snapshot: dict[str, Any]) -> None:
-        try:
-            response = self.session.post(
-                self.BLS_URL,
-                json={
-                    "seriesid": list(self.BLS_SERIES.values()),
-                    "startyear": str(datetime.now(timezone.utc).year - 2),
-                    "endyear": str(datetime.now(timezone.utc).year),
-                },
+        reverse_map = {value: key for key, value in self.BLS_SERIES.items()}
+
+        def fetch_series(series_id: str) -> tuple[str, list[dict[str, Any]]]:
+            response = self.session.get(
+                f"{self.BLS_URL}{series_id}",
+                params={"latest": "true"},
                 timeout=self.timeout_seconds,
             )
             response.raise_for_status()
             payload = response.json()
             if payload.get("status") != "REQUEST_SUCCEEDED":
-                raise RuntimeError("BLS returned an unsuccessful response.")
-
-            reverse_map = {value: key for key, value in self.BLS_SERIES.items()}
-            for series in payload.get("Results", {}).get("series", []):
-                key = reverse_map.get(series.get("seriesID"))
-                if not key:
+                raise RuntimeError(f"BLS returned unsuccessful response for {series_id}.")
+            series = (payload.get("Results") or {}).get("series") or []
+            if not series:
+                return series_id, []
+            rows = []
+            for item in series[0].get("data") or []:
+                value = self._number(item.get("value"))
+                if value is None:
                     continue
-                rows = []
-                for item in series.get("data", []):
-                    value = self._number(item.get("value"))
-                    if value is None:
+                rows.append(
+                    {
+                        "period": item.get("periodName"),
+                        "year": item.get("year"),
+                        "value": value,
+                        "date": self._bls_date(item),
+                        "source": "U.S. Bureau of Labor Statistics",
+                    }
+                )
+            return series_id, rows
+
+        successful = 0
+        try:
+            with ThreadPoolExecutor(max_workers=len(self.BLS_SERIES)) as executor:
+                futures = [executor.submit(fetch_series, series_id) for series_id in self.BLS_SERIES.values()]
+                for future in as_completed(futures):
+                    try:
+                        series_id, rows = future.result()
+                    except Exception as exc:
+                        logger.warning("BLS series request failed: %s", exc)
                         continue
-                    rows.append(
-                        {
-                            "period": item.get("periodName"),
-                            "year": item.get("year"),
-                            "value": value,
-                            "date": self._bls_date(item),
-                            "source": "U.S. Bureau of Labor Statistics",
-                        }
-                    )
-                rows.sort(key=lambda item: item.get("date") or "")
-                snapshot["observations"][key] = rows[-24:]
-            snapshot["source_status"]["bls"] = "CURRENT"
+                    key = reverse_map.get(series_id)
+                    if key and rows:
+                        snapshot["observations"][key] = rows
+                        successful += 1
+
+            snapshot["source_status"]["bls"] = "CURRENT" if successful else "UNAVAILABLE"
         except Exception as exc:
             logger.warning("BLS macro provider failed: %s", exc)
             snapshot["source_status"]["bls"] = "UNAVAILABLE"
@@ -124,9 +131,9 @@ class MacroDataProvider:
                     timeout=self.timeout_seconds,
                 )
                 response.raise_for_status()
-                payload = response.json()
+                payload = response.json() or {}
                 rows = []
-                for item in payload.get("observations", []):
+                for item in payload.get("observations") or []:
                     value = self._number(item.get("value"))
                     if value is None:
                         continue
@@ -146,12 +153,10 @@ class MacroDataProvider:
 
     def _load_ons(self, snapshot: dict[str, Any]) -> None:
         try:
-            metadata = self.session.get(
-                self.ONS_DATASET_URL,
-                timeout=self.timeout_seconds,
-            )
+            metadata = self.session.get(self.ONS_DATASET_URL, timeout=self.timeout_seconds)
             metadata.raise_for_status()
-            latest = metadata.json().get("links", {}).get("latest_version", {})
+            metadata_payload = metadata.json() or {}
+            latest = (metadata_payload.get("links") or {}).get("latest_version") or {}
             version = latest.get("id")
             if not version:
                 raise RuntimeError("ONS did not return the latest CPIH version.")
@@ -166,13 +171,22 @@ class MacroDataProvider:
                 timeout=self.timeout_seconds,
             )
             response.raise_for_status()
-            payload = response.json()
+            payload = response.json() or {}
+            observations = payload.get("observations") or []
+            if not isinstance(observations, list):
+                observations = []
+
             rows = []
-            for item in payload.get("observations", []):
+            for item in observations:
+                if not isinstance(item, dict):
+                    continue
                 value = self._number(item.get("observation"))
                 if value is None:
                     continue
-                time_label = (item.get("dimensions") or {}).get("time", {}).get("option", {}).get("id")
+                dimensions = item.get("dimensions") or {}
+                time_dimension = dimensions.get("time") or {}
+                option = time_dimension.get("option") or {}
+                time_label = option.get("id")
                 rows.append(
                     {
                         "date": time_label,
@@ -181,8 +195,9 @@ class MacroDataProvider:
                         "dataset": "CPIH",
                     }
                 )
+
             snapshot["observations"]["uk_cpih"] = rows[-24:]
-            snapshot["source_status"]["ons"] = "CURRENT"
+            snapshot["source_status"]["ons"] = "CURRENT" if rows else "UNAVAILABLE"
         except Exception as exc:
             logger.warning("ONS macro provider failed: %s", exc)
             snapshot["source_status"]["ons"] = "UNAVAILABLE"
