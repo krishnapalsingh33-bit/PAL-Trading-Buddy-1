@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import PalPageShell from "../components/layout/PalPageShell";
 import type { Page } from "../components/layout/Sidebar";
 import { usePAL } from "../hooks/usePAL";
@@ -6,113 +6,202 @@ import type { MarketQuote } from "../types/pal";
 
 type Props = { onPageChange: (page: Page) => void };
 
-const MARKET_META: Record<string, { label: string; subtitle: string }> = {
-    dxy: { label: "DXY", subtitle: "US Dollar Index" },
-    gbpusd: { label: "GBP/USD", subtitle: "Sterling vs Dollar" },
-    gold: { label: "Gold", subtitle: "XAU/USD" },
-    oil: { label: "Oil", subtitle: "WTI / Crude" },
-    us10y: { label: "US 10Y", subtitle: "Treasury Yield" },
-    us500: { label: "US500", subtitle: "US Equity Index" },
+type MarketCard = {
+    key: string;
+    symbol: string;
+    label: string;
+    subtitle: string;
+    tone: string;
 };
 
-// Backend MarketDataService returns canonical uppercase symbols (DXY,
-// GBPUSD, XAUUSD, USOIL, US10Y, US500). The UI metadata uses display keys
-// such as gold/oil. Resolve the backend snapshot explicitly instead of doing
-// a direct lowercase lookup, which previously made every card show
-// "Data unavailable" even when the API returned valid quotes.
-const MARKET_SYMBOL: Record<string, string> = {
-    dxy: "DXY",
+const MARKETS: MarketCard[] = [
+    { key: "gbpjpy", symbol: "GBPJPY", label: "GBPJPY", subtitle: "GBP / JPY", tone: "FX" },
+    { key: "ethusd", symbol: "ETHUSD", label: "ETHUSD", subtitle: "Ethereum / USD", tone: "CRYPTO" },
+    { key: "xauusd", symbol: "XAUUSD", label: "XAUUSD", subtitle: "Gold / USD", tone: "METAL" },
+    { key: "usdcad", symbol: "USDCAD", label: "USDCAD", subtitle: "USD / CAD", tone: "FX" },
+    { key: "gbpusd", symbol: "GBPUSD", label: "GBPUSD", subtitle: "Sterling / USD", tone: "FX" },
+    { key: "us100", symbol: "US100", label: "US100", subtitle: "NASDAQ 100", tone: "INDEX" },
+    { key: "us30", symbol: "US30", label: "US30", subtitle: "Dow Jones", tone: "INDEX" },
+    { key: "eurjpy", symbol: "EURJPY", label: "EURJPY", subtitle: "EUR / JPY", tone: "FX" },
+    { key: "eurgbp", symbol: "EURGBP", label: "EURGBP", subtitle: "EUR / GBP", tone: "FX" },
+];
+
+const BACKEND_SYMBOL: Record<string, string> = {
+    gbpjpy: "GBPJPY",
+    ethusd: "ETHUSD",
+    xauusd: "XAUUSD",
+    usdcad: "USDCAD",
     gbpusd: "GBPUSD",
-    gold: "XAUUSD",
-    oil: "USOIL",
-    us10y: "US10Y",
-    us500: "US500",
+    us100: "US100",
+    us30: "US30",
+    eurjpy: "EURJPY",
+    eurgbp: "EURGBP",
 };
 
 function getMarket(markets: Record<string, unknown>, key: string): MarketQuote | undefined {
-    const symbol = MARKET_SYMBOL[key];
-    const direct = markets[symbol] ?? markets[symbol.toLowerCase()] ?? markets[key];
-    return direct as MarketQuote | undefined;
+    const symbol = BACKEND_SYMBOL[key];
+    const candidates = [symbol, symbol?.toLowerCase(), key];
+    for (const candidate of candidates) {
+        if (candidate && markets[candidate]) return markets[candidate] as MarketQuote;
+    }
+    return undefined;
 }
 
-function formatPrice(market: MarketQuote | undefined) {
-    if (!market || market.price == null) return "Data unavailable";
-    return market.price.toLocaleString(undefined, { maximumFractionDigits: 5 });
+function displayPrice(market?: MarketQuote) {
+    if (market?.price == null) return "Data unavailable";
+    return market.price.toLocaleString(undefined, { maximumFractionDigits: 4 });
 }
 
-function formatPercent(market: MarketQuote | undefined) {
-    if (!market || market.change_percent == null) return "—";
+function displayChange(market?: MarketQuote) {
+    if (market?.change_percent == null) return "—";
     const value = market.change_percent;
     return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
 }
 
-function freshness(market: MarketQuote | undefined) {
-    if (!market) return "Unavailable";
-    if ((market.status === "CURRENT" || market.status === "RECENT") && market.freshness_seconds != null) {
-        return market.freshness_seconds < 60
-            ? `Updated ${Math.max(1, Math.round(market.freshness_seconds))}s ago`
-            : `Updated ${Math.round(market.freshness_seconds / 60)}m ago`;
+function freshness(market?: MarketQuote) {
+    if (!market) return "No feed";
+    if (market.freshness_seconds != null && (market.status === "CURRENT" || market.status === "RECENT")) {
+        const seconds = Math.max(1, Math.round(market.freshness_seconds));
+        return seconds < 60 ? `${seconds}s ago` : `${Math.round(seconds / 60)}m ago`;
     }
-    return market.status === "STALE" ? "STALE · last known data" : market.status;
+    return market.status === "STALE" ? "Stale" : market.status;
 }
 
 function biasFor(key: string, report: any) {
-    if (key === "dxy") return report?.dxy?.bias ?? "NEUTRAL";
-    if (key === "gbpusd") return report?.gbpusd?.bias ?? "NEUTRAL";
-    return "NEUTRAL";
+    if (key === "gbpusd") return report?.gbpusd?.bias ?? "Neutral";
+    if (key === "xauusd") return report?.dxy?.bias === "BEARISH" ? "Bullish" : "Bearish";
+    return "Neutral";
+}
+
+function toneFor(bias: string, change: number | null | undefined) {
+    const normalized = bias.toUpperCase();
+    if (normalized.includes("BULL") || (change != null && change > 0.2)) return "bullish";
+    if (normalized.includes("BEAR") || (change != null && change < -0.2)) return "bearish";
+    return "neutral";
+}
+
+function analysisFor(card: MarketCard, market: MarketQuote | undefined, bias: string) {
+    const change = market?.change_percent;
+    if (card.key === "gbpusd") {
+        return "GBP strength is being weighed against the broader USD backdrop. Use the macro view to confirm whether the current move has enough fundamental support.";
+    }
+    if (card.key === "xauusd") {
+        return "Gold is being read through rates, USD pressure and risk tone. A cleaner directional read requires those drivers to agree.";
+    }
+    if (change != null && Math.abs(change) > 0.7) {
+        return `${card.label} is moving with elevated intraday momentum. ${bias === "Neutral" ? "Direction remains mixed until macro and price pressure align." : `Current macro framing is ${bias.toLowerCase()}.`}`;
+    }
+    return `${card.label} is currently showing a quieter tape. PAL is watching cross-asset pressure, macro catalysts and fresh price movement before increasing conviction.`;
 }
 
 export default function MacroDesk({ onPageChange }: Props) {
     const { data, isLoading, error } = usePAL();
+    const [expanded, setExpanded] = useState<string | null>(null);
     const report = data?.report?.macro;
     const markets = (report?.markets ?? {}) as Record<string, unknown>;
-    const cards = useMemo(() => Object.keys(MARKET_META), []);
-    const headlines = (report?.news ?? []).slice(0, 4);
     const sourceStatus = report?.macro_data?.source_status ?? {};
+    const cards = useMemo(() => MARKETS, []);
+    const overallBias = report?.gbpusd?.bias ?? "Neutral";
+    const confidence = Number(report?.confidence ?? 0);
+    const headlines = (report?.news ?? []).slice(0, 4);
+
+    const openDeepDive = (card: MarketCard) => {
+        try {
+            window.sessionStorage.setItem("pal_macro_view_market", card.key === "xauusd" ? "gold" : card.key === "us100" ? "us500" : card.key);
+        } catch {
+            // Navigation still works when session storage is unavailable.
+        }
+        onPageChange("macro-view");
+    };
 
     return (
         <PalPageShell page="macro-desk" onPageChange={onPageChange}>
-            <div className="mx-auto max-w-7xl p-5 sm:p-8">
-                <header className="mb-6">
-                    <p className="text-xs font-semibold uppercase tracking-[0.28em] text-emerald-300/70">AI Macro Desk</p>
-                    <div className="mt-2 flex flex-wrap items-end justify-between gap-4">
-                        <div>
-                            <h1 className="text-3xl font-semibold tracking-tight">Markets That Matter</h1>
-                            <p className="mt-2 max-w-2xl text-sm text-zinc-500">Cross-asset market intelligence connected to PAL's live market, macro-data and news feeds.</p>
+            <div className="min-h-screen bg-[#06100d] text-white">
+                <main className="mx-auto max-w-[1420px] px-4 py-6 sm:px-6 lg:px-8">
+                    <header className="mb-5">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.34em] text-emerald-300/70">AI Macro Desk</p>
+                        <div className="mt-2 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                            <div>
+                                <h1 className="text-3xl font-semibold tracking-tight sm:text-[36px]">AI Market Bias Dashboard</h1>
+                                <p className="mt-1 text-sm text-zinc-500">Where deep institutional analysis meets AI-driven clarity</p>
+                            </div>
+                            <div className="flex items-center gap-3 text-[10px] uppercase tracking-[0.18em] text-zinc-600">
+                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-300 shadow-[0_0_10px_rgba(110,231,183,.9)]" />
+                                Live macro intelligence
+                            </div>
                         </div>
-                        <div className="rounded-full border border-emerald-400/15 bg-emerald-400/5 px-3 py-1.5 text-xs text-emerald-300">LIVE MACRO FEED</div>
-                    </div>
-                </header>
+                    </header>
 
-                <section className="mb-6 grid gap-3 md:grid-cols-3">
-                    <div className="rounded-2xl border border-zinc-800 bg-zinc-900/50 p-4"><p className="text-xs uppercase tracking-widest text-zinc-500">Overall GBP/USD bias</p><p className="mt-2 text-xl font-semibold">{report?.gbpusd?.bias ?? "—"}</p></div>
-                    <div className="rounded-2xl border border-zinc-800 bg-zinc-900/50 p-4"><p className="text-xs uppercase tracking-widest text-zinc-500">Macro confidence</p><p className="mt-2 text-xl font-semibold">{report?.confidence ?? "—"}<span className="text-sm text-zinc-500"> / 100</span></p></div>
-                    <div className="rounded-2xl border border-zinc-800 bg-zinc-900/50 p-4"><p className="text-xs uppercase tracking-widest text-zinc-500">Feed status</p><p className="mt-2 text-xl font-semibold">{error ? "DEGRADED" : isLoading ? "LOADING" : "CONNECTED"}</p></div>
-                </section>
+                    <section className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/[0.07] bg-[#091712]/90 px-4 py-3 shadow-[0_16px_45px_rgba(0,0,0,.22)]">
+                        <div className="text-xs text-zinc-500">Overall market sentiment <span className="ml-2 rounded-md border border-cyan-400/10 bg-cyan-400/[0.08] px-2 py-1 font-semibold text-cyan-300">{overallBias}</span></div>
+                        <div className="text-xs text-zinc-500">Confidence index <span className="ml-2 rounded-md border border-cyan-400/10 bg-cyan-400/[0.08] px-2 py-1 font-semibold text-cyan-300">{confidence}%</span></div>
+                        <div className="text-[10px] text-zinc-700">{error ? "Feed degraded" : isLoading ? "Refreshing…" : "Live update"}</div>
+                    </section>
 
-                <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                    {cards.map((key) => {
-                        const market = getMarket(markets, key);
-                        const meta = MARKET_META[key];
-                        const change = market?.change_percent ?? null;
-                        const bias = biasFor(key, report);
-                        return (
-                            <article key={key} className="group rounded-2xl border border-zinc-800 bg-zinc-950/80 p-5 shadow-2xl shadow-black/20 transition hover:border-emerald-400/20">
-                                <div className="flex items-start justify-between gap-3"><div><h2 className="text-lg font-semibold">{meta.label}</h2><p className="mt-1 text-[11px] uppercase tracking-[0.2em] text-zinc-600">{meta.subtitle}</p></div><span className="rounded-full border border-zinc-700 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">{bias}</span></div>
-                                <div className="mt-6 flex items-end justify-between gap-3"><div><div className="text-3xl font-semibold tabular-nums tracking-tight">{formatPrice(market)}</div><div className={`mt-1 text-sm font-medium ${change == null ? "text-zinc-500" : change >= 0 ? "text-emerald-300" : "text-red-300"}`}>{formatPercent(market)}</div></div><div className="text-right text-[11px] text-zinc-600">{freshness(market)}</div></div>
-                                <div className="mt-5 h-1 overflow-hidden rounded-full bg-zinc-800"><div className="h-full w-1/3 rounded-full bg-emerald-400/60 transition-all group-hover:w-2/3" /></div>
-                                <p className="mt-4 text-xs leading-5 text-zinc-500">{market?.reason || "Live market data supplied by the macro feed."}</p>
-                            </article>
-                        );
-                    })}
-                </section>
+                    <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                        {cards.map((card) => {
+                            const market = getMarket(markets, card.key);
+                            const change = market?.change_percent;
+                            const bias = biasFor(card.key, report);
+                            const tone = toneFor(bias, change);
+                            const expandedCard = expanded === card.key;
 
-                <section className="mt-6 grid gap-4 lg:grid-cols-[1.15fr_.85fr]">
-                    <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5"><div className="flex items-center justify-between"><div><p className="text-xs uppercase tracking-widest text-emerald-300/70">News intelligence</p><h2 className="mt-1 text-lg font-semibold">Recent macro catalysts</h2></div><span className="text-xs text-zinc-600">{headlines.length} shown</span></div><div className="mt-4 grid gap-3 md:grid-cols-2">{headlines.map((item, index) => <div key={index} className="rounded-xl border border-zinc-900 bg-zinc-900/40 p-4"><p className="text-sm leading-5 text-zinc-300">{String((item as any).title ?? (item as any).headline ?? "Macro headline")}</p><p className="mt-2 text-[10px] uppercase tracking-widest text-zinc-600">{String((item as any).source ?? "Provider")}</p></div>)}{!headlines.length && <p className="text-sm text-zinc-600">No macro headlines currently supplied.</p>}</div></div>
-                    <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5"><p className="text-xs uppercase tracking-widest text-cyan-300/70">Data health</p><div className="mt-4 space-y-2">{Object.entries(sourceStatus).map(([source, status]) => <div key={source} className="flex items-center justify-between rounded-lg border border-zinc-900 bg-zinc-900/40 px-3 py-2"><span className="text-xs text-zinc-500">{source}</span><span className="text-[10px] uppercase tracking-wider text-zinc-400">{String(status)}</span></div>)}{!Object.keys(sourceStatus).length && <p className="text-sm text-zinc-600">No macro observation sources reported.</p>}</div><p className="mt-4 text-xs leading-5 text-zinc-600">Provider failures remain isolated; PAL shows unavailable data rather than inventing values.</p></div>
-                </section>
+                            return (
+                                <article key={card.key} className="group overflow-hidden rounded-2xl border border-white/[0.08] bg-[#0a1512]/95 shadow-[0_18px_50px_rgba(0,0,0,.28)] transition duration-200 hover:-translate-y-0.5 hover:border-emerald-300/20 hover:shadow-[0_22px_65px_rgba(0,0,0,.36)]">
+                                    <div className="p-4 sm:p-5">
+                                        <div className="flex items-start justify-between gap-3">
+                                            <div>
+                                                <div className="flex items-center gap-2">
+                                                    <h2 className="text-[17px] font-semibold tracking-tight">{card.label}</h2>
+                                                    <span className={`text-[10px] font-semibold ${change != null && change >= 0 ? "text-emerald-400" : "text-red-400"}`}>{displayChange(market)}</span>
+                                                </div>
+                                                <p className="mt-1 text-[10px] uppercase tracking-[0.18em] text-zinc-600">{card.subtitle} · {card.tone}</p>
+                                            </div>
+                                            <span className={`rounded-md border px-2 py-1 text-[9px] font-semibold uppercase tracking-wider ${tone === "bullish" ? "border-emerald-400/10 bg-emerald-400/[0.08] text-emerald-300" : tone === "bearish" ? "border-red-400/10 bg-red-400/[0.07] text-red-300" : "border-white/[0.08] bg-white/[0.025] text-zinc-500"}`}>{bias}</span>
+                                        </div>
 
-                <p className="mt-5 text-xs text-zinc-600">Prices, changes, freshness and macro observations are displayed only when supplied by backend providers. No values are invented by the UI.</p>
+                                        <div className="mt-4 h-px bg-white/[0.05]" />
+                                        <div className="mt-4 flex items-center justify-between">
+                                            <div>
+                                                <div className="text-[10px] text-zinc-600">Confidence</div>
+                                                <div className="mt-1 h-1.5 w-44 overflow-hidden rounded-full bg-zinc-900 sm:w-56"><div className="h-full rounded-full bg-[#9ec8ba]" style={{ width: `${Math.max(8, Math.min(100, confidence || 45))}%` }} /></div>
+                                            </div>
+                                            <span className="text-[10px] text-zinc-500">{Math.max(0, Math.min(100, confidence || 45))}%</span>
+                                        </div>
+
+                                        <div className="mt-4 rounded-xl border border-white/[0.06] bg-[#08110f] p-3.5">
+                                            <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-cyan-300/80">◆ AI Analysis</div>
+                                            <p className={`mt-2 text-[12px] leading-[1.55] text-zinc-400 ${expandedCard ? "" : "line-clamp-3"}`}>{analysisFor(card, market, bias)}</p>
+                                        </div>
+
+                                        <div className="mt-3 flex gap-2">
+                                            <button type="button" onClick={() => setExpanded(expandedCard ? null : card.key)} className="flex-1 rounded-lg border border-white/[0.08] bg-white/[0.025] px-3 py-2 text-[10px] font-semibold text-zinc-400 transition hover:bg-white/[0.05] hover:text-zinc-200">{expandedCard ? "Hide Overview" : "Quick Overview"} <span className="ml-1">⌄</span></button>
+                                            <button type="button" onClick={() => openDeepDive(card)} className="flex-1 rounded-lg border border-emerald-400/20 bg-emerald-400/80 px-3 py-2 text-[10px] font-bold text-[#04100c] transition hover:bg-emerald-300">Deep Dive ↗</button>
+                                        </div>
+
+                                        {expandedCard && <div className="mt-3 rounded-lg border border-white/[0.05] bg-white/[0.018] p-3 text-[11px] leading-5 text-zinc-500">{market?.reason || "PAL has no additional provider explanation for this instrument yet."}</div>}
+
+                                        <div className="mt-4 flex items-center justify-between text-[9px] uppercase tracking-wider text-zinc-700">
+                                            <span>{freshness(market)}</span>
+                                            <span>{market?.status ?? "UNAVAILABLE"}</span>
+                                        </div>
+                                    </div>
+                                </article>
+                            );
+                        })}
+                    </section>
+
+                    <section className="mt-5 grid gap-4 lg:grid-cols-[1.15fr_.85fr]">
+                        <div className="rounded-2xl border border-white/[0.08] bg-[#091310] p-5 shadow-[0_18px_50px_rgba(0,0,0,.24)]">
+                            <div className="flex items-center justify-between"><div><p className="text-[10px] uppercase tracking-[0.2em] text-emerald-300/70">News intelligence</p><h2 className="mt-1 text-lg font-semibold">Recent macro catalysts</h2></div><span className="text-[10px] text-zinc-700">{headlines.length} shown</span></div>
+                            <div className="mt-4 grid gap-3 sm:grid-cols-2">{headlines.map((item, index) => <div key={index} className="rounded-xl border border-white/[0.05] bg-black/20 p-4"><p className="text-sm leading-5 text-zinc-300">{String((item as any).title ?? (item as any).headline ?? "Macro headline")}</p><p className="mt-2 text-[9px] uppercase tracking-widest text-zinc-700">{String((item as any).source ?? "Provider")}</p></div>)}{!headlines.length && <p className="text-sm text-zinc-600">No macro headlines currently supplied.</p>}</div>
+                        </div>
+                        <div className="rounded-2xl border border-white/[0.08] bg-[#091310] p-5 shadow-[0_18px_50px_rgba(0,0,0,.24)]">
+                            <div className="text-[10px] uppercase tracking-[0.2em] text-cyan-300/70">Data health</div>
+                            <div className="mt-4 space-y-2">{Object.entries(sourceStatus).map(([source, status]) => <div key={source} className="flex items-center justify-between rounded-lg border border-white/[0.05] bg-black/20 px-3 py-2"><span className="text-xs text-zinc-500">{source}</span><span className="text-[9px] uppercase tracking-wider text-zinc-400">{String(status)}</span></div>)}{!Object.keys(sourceStatus).length && <p className="text-sm text-zinc-600">No macro observation sources reported.</p>}</div>
+                        </div>
+                    </section>
+                </main>
             </div>
         </PalPageShell>
     );
