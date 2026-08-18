@@ -9,7 +9,7 @@ from providers.treasury_yield_provider import TreasuryYieldProvider
 
 
 class ResilientMacroDataProvider(MacroDataProvider):
-    """Macro provider with official Treasury and online-market fallbacks."""
+    """Macro provider that does not block on the optional FRED API."""
 
     def __init__(self, timeout_seconds: float = 8.0) -> None:
         super().__init__(timeout_seconds=timeout_seconds)
@@ -26,19 +26,27 @@ class ResilientMacroDataProvider(MacroDataProvider):
         }]
 
     def get_snapshot(self) -> dict[str, Any]:
-        snapshot = super().get_snapshot()
-        observations = snapshot.setdefault("observations", {})
+        # Deliberately do not call MacroDataProvider.get_snapshot(): that method
+        # calls FRED after BLS/ONS and can block the entire Macro View when the
+        # user's network cannot reach fred.stlouisfed.org. BLS and ONS remain
+        # available through their existing cached provider methods.
+        snapshot: dict[str, Any] = {
+            "source_status": {},
+            "observations": {},
+            "fetched_at": datetime.now(timezone.utc).isoformat(),
+        }
+        self._load_bls(snapshot)
+        self._load_ons(snapshot)
 
-        # FRED requires an API key and may be unreachable from a local network.
-        # Do not repeatedly block Macro View on that endpoint.
+        observations = snapshot["observations"]
         self._fallback_treasury(observations)
         self._fallback_market_series(observations)
 
-        # fed_funds is populated by MacroDataService from the official FOMC policy
-        # snapshot, so this source status describes the optional FRED feed only.
-        snapshot["source_status"]["fred"] = "CURRENT" if any(
-            observations.get(key) for key in ("fed_funds", "us_2y", "us_10y", "vix")
-        ) else "NOT_CONFIGURED"
+        # FRED is optional. Treasury, Federal Reserve policy, and Yahoo/CBOE
+        # are the active sources used by the resilient provider.
+        snapshot["source_status"]["fred"] = "NOT_CONFIGURED"
+        snapshot["source_status"]["treasury"] = "CURRENT" if observations.get("us_2y") or observations.get("us_10y") else "UNAVAILABLE"
+        snapshot["source_status"]["market"] = "CURRENT" if observations.get("vix") else "UNAVAILABLE"
         return snapshot
 
     def _fallback_treasury(self, observations: dict[str, Any]) -> None:
@@ -54,26 +62,23 @@ class ResilientMacroDataProvider(MacroDataProvider):
             return
 
     def _fallback_market_series(self, observations: dict[str, Any]) -> None:
-        mappings = {"us_10y": "US10Y", "vix": "VIX"}
-        for key, symbol in mappings.items():
-            if observations.get(key):
-                continue
+        if not observations.get("vix"):
             try:
-                quote = self.market.get_quote(symbol)
+                quote = self.market.get_quote("VIX")
                 if quote.status in {"CURRENT", "RECENT", "STALE"} and quote.price is not None:
-                    observations[key] = self._observation(
-                        float(quote.price),
-                        "Yahoo Finance",
-                        getattr(quote, "unit", "value"),
-                    )
+                    observations["vix"] = self._observation(float(quote.price), quote.source or "Yahoo Finance")
             except Exception:
-                continue
+                pass
+
+        if not observations.get("us_10y"):
+            try:
+                quote = self.market.get_quote("US10Y")
+                if quote.status in {"CURRENT", "RECENT", "STALE"} and quote.price is not None:
+                    observations["us_10y"] = self._observation(float(quote.price), quote.source or "Yahoo Finance", getattr(quote, "unit", "yield_percent"))
+            except Exception:
+                pass
 
         if observations.get("us_2y") and observations.get("us_10y"):
-            two = observations["us_2y"][-1]["value"]
-            ten = observations["us_10y"][-1]["value"]
-            observations["us_10y_2y_spread"] = self._observation(
-                float(ten) - float(two),
-                "Derived from U.S. Treasury",
-                "percentage_points",
-            )
+            two = float(observations["us_2y"][-1]["value"])
+            ten = float(observations["us_10y"][-1]["value"])
+            observations["us_10y_2y_spread"] = self._observation(ten - two, "Derived from U.S. Treasury", "percentage_points")
