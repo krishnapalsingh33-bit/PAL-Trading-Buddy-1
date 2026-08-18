@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 from threading import Lock
 
@@ -40,7 +41,7 @@ class MarketDataService:
                 return cached
 
         quote = self.provider.get_quote(normalized)
-        if quote.status == "CURRENT":
+        if quote.status in {"CURRENT", "RECENT"} and quote.price is not None:
             self._set_cache(normalized, quote)
             return quote
 
@@ -58,8 +59,32 @@ class MarketDataService:
         return quote
 
     def get_snapshot(self, force_refresh: bool = False) -> dict[str, dict]:
+        """Fetch all six markets concurrently so one slow provider cannot block the dashboard."""
+        result: dict[str, dict] = {}
+
+        def load(symbol: str) -> tuple[str, dict]:
+            return symbol, self.get_market_data(symbol, force_refresh=force_refresh).to_dict()
+
+        with ThreadPoolExecutor(max_workers=len(self.SYMBOLS)) as executor:
+            futures = [executor.submit(load, symbol) for symbol in self.SYMBOLS]
+            for future in as_completed(futures):
+                symbol, quote = future.result()
+                result[symbol] = quote
+
         return {
-            symbol: self.get_market_data(symbol, force_refresh=force_refresh).to_dict()
+            symbol: result.get(symbol, {
+                "symbol": symbol,
+                "price": None,
+                "previous_price": None,
+                "change": None,
+                "change_percent": None,
+                "timestamp": None,
+                "source": "online_provider",
+                "status": "UNAVAILABLE",
+                "freshness_seconds": None,
+                "unit": "price",
+                "reason": "No quote returned.",
+            })
             for symbol in self.SYMBOLS
         }
 
