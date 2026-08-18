@@ -2,8 +2,9 @@ import { useEffect, useState } from "react";
 
 import Dashboard from "./pages/Dashboard";
 import JournalTest from "./pages/JournalTest";
+import JournalScreenshots from "./components/journal/JournalScreenshots";
 import MacroDesk from "./pages/MacroDesk";
-import MacroView from "./pages/MacroView";
+import MacroViewPremium from "./pages/MacroViewPremium";
 import MacroCalendar from "./pages/MacroCalendar";
 import DailyReports from "./pages/DailyReports";
 import PalPageShell from "./components/layout/PalPageShell";
@@ -40,12 +41,13 @@ function App() {
         return (
             <PalPageShell page="journal" onPageChange={navigate}>
                 <JournalTest />
+                <JournalScreenshots />
             </PalPageShell>
         );
     }
 
     if (page === "macro-desk") return <MacroDesk onPageChange={navigate} />;
-    if (page === "macro-view") return <MacroView onPageChange={navigate} />;
+    if (page === "macro-view") return <MacroViewPremium onPageChange={navigate} />;
     if (page === "macro-calendar") return <MacroCalendar onPageChange={navigate} />;
     if (page === "reports") return <DailyReports onPageChange={navigate} />;
 
