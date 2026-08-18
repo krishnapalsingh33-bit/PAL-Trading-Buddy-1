@@ -16,7 +16,7 @@ const MARKETS = [
 ] as const;
 
 function quoteText(market?: MarketQuote) {
-    if (!market?.price) return "Data unavailable";
+    if (!market || market.price == null) return "Data unavailable";
     return market.price.toLocaleString(undefined, { maximumFractionDigits: 5 });
 }
 
@@ -32,7 +32,6 @@ export default function MacroView({ onPageChange }: Props) {
     const selectedMeta = MARKETS.find(([key]) => key === selected) ?? MARKETS[0];
     const market = markets[selected] as MarketQuote | undefined;
     const macro = data?.report?.macro;
-
     const news = useMemo(() => (macro?.news ?? []).slice(0, 5), [macro?.news]);
 
     return (
@@ -51,36 +50,24 @@ export default function MacroView({ onPageChange }: Props) {
                 </div>
 
                 <div className="mt-6 flex flex-wrap gap-2">
-                    {MARKETS.map(([key, label]) => (
-                        <button key={key} type="button" onClick={() => setSelected(key)} className={`rounded-full border px-3 py-1.5 text-xs transition ${selected === key ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-200" : "border-zinc-800 text-zinc-500 hover:text-zinc-200"}`}>{label}</button>
-                    ))}
+                    {MARKETS.map(([key, label]) => <button key={key} type="button" onClick={() => setSelected(key)} className={`rounded-full border px-3 py-1.5 text-xs transition ${selected === key ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-200" : "border-zinc-800 text-zinc-500 hover:text-zinc-200"}`}>{label}</button>)}
                 </div>
 
                 <section className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(300px,.9fr)]">
                     <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5">
                         <div className="flex items-end justify-between gap-4">
-                            <div>
-                                <p className="text-xs uppercase tracking-widest text-zinc-600">Current value</p>
-                                <p className="mt-2 text-4xl font-semibold tabular-nums">{quoteText(market)}</p>
-                            </div>
+                            <div><p className="text-xs uppercase tracking-widest text-zinc-600">Current value</p><p className="mt-2 text-4xl font-semibold tabular-nums">{quoteText(market)}</p></div>
                             <p className={`text-lg font-semibold ${market?.change_percent == null ? "text-zinc-500" : market.change_percent >= 0 ? "text-emerald-300" : "text-red-300"}`}>{pctText(market)}</p>
                         </div>
-                        <div className="mt-7 flex h-48 items-end gap-1 rounded-xl border border-zinc-900 bg-zinc-900/40 p-4">
-                            {Array.from({ length: 36 }).map((_, i) => <span key={i} className="flex-1 rounded-t bg-emerald-400/20" style={{ height: `${28 + ((i * 37) % 62)}%` }} />)}
+                        <div className="mt-7 flex min-h-48 items-center justify-center rounded-xl border border-zinc-900 bg-zinc-900/40 p-6">
+                            <div className="text-center"><p className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-600">Historical series</p><p className="mt-2 text-sm text-zinc-400">Waiting for OHLC/history from the online market provider.</p><p className="mt-2 text-xs text-zinc-600">PAL will not draw fabricated price history.</p></div>
                         </div>
-                        <p className="mt-3 text-xs text-zinc-600">The visual strip is a UI placeholder until historical OHLC/series data is exposed by the market-data provider. No historical prices are fabricated.</p>
+                        <div className="mt-4 flex items-center justify-between text-xs text-zinc-600"><span>Provider status</span><span>{market?.status ?? "UNAVAILABLE"}</span></div>
                     </div>
 
                     <div className="space-y-4">
-                        <div className="rounded-2xl border border-cyan-400/10 bg-cyan-400/5 p-5">
-                            <p className="text-xs font-semibold uppercase tracking-widest text-cyan-300/70">AI overview</p>
-                            <p className="mt-3 text-sm leading-6 text-zinc-300">{macro?.summary || "Macro summary is waiting for the PAL feed."}</p>
-                        </div>
-                        <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5">
-                            <p className="text-xs uppercase tracking-widest text-zinc-600">Market policy</p>
-                            <p className="mt-2 text-xl font-semibold">{macro?.gbpusd?.bias ?? "NEUTRAL"}</p>
-                            <p className="mt-2 text-sm leading-6 text-zinc-500">{macro?.main_risk || "No additional macro risk supplied."}</p>
-                        </div>
+                        <div className="rounded-2xl border border-cyan-400/10 bg-cyan-400/5 p-5"><p className="text-xs font-semibold uppercase tracking-widest text-cyan-300/70">AI overview</p><p className="mt-3 text-sm leading-6 text-zinc-300">{macro?.summary || "Macro summary is waiting for the PAL feed."}</p></div>
+                        <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5"><p className="text-xs uppercase tracking-widest text-zinc-600">Market policy</p><p className="mt-2 text-xl font-semibold">{macro?.gbpusd?.bias ?? "NEUTRAL"}</p><p className="mt-2 text-sm leading-6 text-zinc-500">{macro?.main_risk || "No additional macro risk supplied."}</p></div>
                     </div>
                 </section>
 
@@ -90,13 +77,7 @@ export default function MacroView({ onPageChange }: Props) {
                     <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5"><p className="text-xs uppercase tracking-widest text-zinc-600">Pulse</p><p className="mt-3 text-xl font-semibold">{error ? "DEGRADED" : "CONNECTED"}</p><p className="mt-2 text-sm text-zinc-500">Backend feed health, not a trading signal.</p></div>
                 </section>
 
-                <section className="mt-6 rounded-2xl border border-zinc-800 bg-zinc-950 p-5">
-                    <div className="flex items-center justify-between"><h2 className="text-lg font-semibold">Recent catalysts</h2><span className="text-xs uppercase tracking-widest text-zinc-600">Curated</span></div>
-                    <div className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-                        {news.map((item, index) => <div key={index} className="rounded-xl border border-zinc-900 bg-zinc-900/40 p-4 text-sm leading-5 text-zinc-400">{String((item as any).title ?? (item as any).headline ?? "Macro headline")}</div>)}
-                        {!news.length && <p className="text-sm text-zinc-600">No macro headlines currently supplied.</p>}
-                    </div>
-                </section>
+                <section className="mt-6 rounded-2xl border border-zinc-800 bg-zinc-950 p-5"><div className="flex items-center justify-between"><h2 className="text-lg font-semibold">Recent catalysts</h2><span className="text-xs uppercase tracking-widest text-zinc-600">Curated</span></div><div className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-3">{news.map((item, index) => <div key={index} className="rounded-xl border border-zinc-900 bg-zinc-900/40 p-4 text-sm leading-5 text-zinc-400">{String((item as any).title ?? (item as any).headline ?? "Macro headline")}</div>)}{!news.length && <p className="text-sm text-zinc-600">No macro headlines currently supplied.</p>}</div></section>
             </div>
         </PalPageShell>
     );
