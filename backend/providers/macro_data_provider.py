@@ -20,6 +20,7 @@ class MacroDataProvider:
     BLS_V2_URL = "https://api.bls.gov/publicAPI/v2/timeseries/data/"
     FRED_URL = "https://api.stlouisfed.org/fred/series/observations"
     ONS_BASE_URL = "https://api.beta.ons.gov.uk/v1"
+    ONS_DATASET_URL = f"{ONS_BASE_URL}/datasets/cpih01"
 
     BLS_SERIES = {
         "us_cpi": "CUSR0000SA0",
@@ -155,43 +156,49 @@ class MacroDataProvider:
             snapshot["source_status"]["ons"] = status
 
     def _fetch_ons_cpih(self) -> list[dict[str, Any]]:
-        """Fetch the latest CPIH months directly, avoiding asynchronous filter outputs.
+        """Fetch the latest CPIH months from the latest published ONS version."""
+        dataset = self.session.get(self.ONS_DATASET_URL, timeout=self.timeout_seconds)
+        dataset.raise_for_status()
+        dataset_body = dataset.json() or {}
+        latest = (dataset_body.get("links") or {}).get("latest_version") or {}
+        latest_href = latest.get("href") if isinstance(latest, dict) else None
+        if not latest_href:
+            raise RuntimeError("ONS CPIH dataset did not expose a latest_version link.")
 
-        ONS documents the CMD observations endpoint as accepting one option for
-        each dimension and also documents the time dimension as a human-readable
-        label such as ``Oct-11``. We first retrieve the available time options,
-        select the latest 24 months, then request each exact month. This costs
-        at most 25 ONS requests and preserves an unambiguous date/value pair.
-        """
-        options_url = (
-            f"{self.ONS_BASE_URL}/datasets/cpih01/editions/time-series/versions/6"
-            "/dimensions/time/options"
-        )
+        match = re.search(r"/versions/(\d+)$", latest_href.rstrip("/"))
+        if not match:
+            raise RuntimeError(f"Unable to determine ONS CPIH version from {latest_href!r}.")
+        version = match.group(1)
+
+        options_url = f"{latest_href.rstrip('/')}/dimensions/time/options"
         response = self.session.get(options_url, params={"limit": 1000}, timeout=self.timeout_seconds)
         response.raise_for_status()
         body = response.json() or {}
         options = body.get("items") or []
         dated_options: list[tuple[datetime, str]] = []
+        current_year = datetime.now(timezone.utc).year
         for item in options:
             label = item.get("label") or item.get("option")
             if not isinstance(label, str):
                 continue
-            match = re.fullmatch(r"([A-Za-z]{3})-(\d{2})", label.strip())
+            label = label.strip()
+            match = re.fullmatch(r"([A-Za-z]{3})-(\d{2})", label)
             if not match:
                 continue
             try:
-                dated_options.append((datetime.strptime(label.strip(), "%b-%y"), label.strip()))
+                two_digit_year = int(match.group(2))
+                century = 2000 if two_digit_year <= (current_year % 100 + 1) else 1900
+                parsed = datetime.strptime(f"{match.group(1)}-{century + two_digit_year}", "%b-%Y")
+                dated_options.append((parsed, label))
             except ValueError:
                 continue
 
         if not dated_options:
-            raise RuntimeError("ONS returned no usable CPIH time options.")
+            raise RuntimeError(f"ONS CPIH version {version} returned no usable time options.")
 
         latest_labels = [label for _, label in sorted(dated_options)[-24:]]
+        observation_url = f"{latest_href.rstrip('/')}/observations"
         rows: list[dict[str, Any]] = []
-        observation_url = (
-            f"{self.ONS_BASE_URL}/datasets/cpih01/editions/time-series/versions/6/observations"
-        )
         for label in latest_labels:
             response = self.session.get(
                 observation_url,
@@ -203,8 +210,7 @@ class MacroDataProvider:
                 timeout=self.timeout_seconds,
             )
             response.raise_for_status()
-            body = response.json() or {}
-            observations = body.get("observations") or []
+            observations = (response.json() or {}).get("observations") or []
             if not observations:
                 continue
             value = self._number(observations[0].get("observation"))
@@ -215,10 +221,19 @@ class MacroDataProvider:
                 "value": value,
                 "source": "UK Office for National Statistics",
                 "dataset": "CPIH",
+                "version": int(version),
             })
 
-        rows.sort(key=lambda row: datetime.strptime(row["date"], "%b-%y"))
+        rows.sort(key=lambda row: self._ons_month_key(row["date"]))
         return rows
+
+    @staticmethod
+    def _ons_month_key(label: str) -> datetime:
+        month, year = label.split("-")
+        two_digit_year = int(year)
+        current_year = datetime.now(timezone.utc).year
+        century = 2000 if two_digit_year <= (current_year % 100 + 1) else 1900
+        return datetime.strptime(f"{month}-{century + two_digit_year}", "%b-%Y")
 
     def _load_fred(self, snapshot: dict[str, Any]) -> None:
         api_key = os.getenv("FRED_API_KEY", "").strip()
