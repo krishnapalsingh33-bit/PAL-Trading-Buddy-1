@@ -18,6 +18,8 @@ class MacroDataProvider:
     BLS_V1_URL = "https://api.bls.gov/publicAPI/v1/timeseries/data/"
     BLS_V2_URL = "https://api.bls.gov/publicAPI/v2/timeseries/data/"
     BLS_DOWNLOAD_BASE = "https://download.bls.gov/pub/time.series"
+    BLS_CPI_RELEASE_URL = "https://www.bls.gov/news.release/cpi.nr0.htm"
+    BLS_EMPLOYMENT_RELEASE_URL = "https://www.bls.gov/news.release/empsit.nr0.htm"
     FRED_URL = "https://api.stlouisfed.org/fred/series/observations"
     ONS_BASE_URL = "https://api.beta.ons.gov.uk/v1"
     ONS_DATASET_URL = f"{ONS_BASE_URL}/datasets/cpih01"
@@ -77,12 +79,12 @@ class MacroDataProvider:
                     observations = self._bls_batch("v2")
                     status = "CURRENT" if observations else "UNAVAILABLE"
                 except Exception as second_exc:
-                    logger.warning("BLS API unavailable, using official BLS downloads: %s", second_exc)
+                    logger.warning("BLS API unavailable, using official BLS release pages: %s", second_exc)
                     try:
-                        observations = self._bls_download_fallback()
+                        observations = self._bls_release_fallback()
                         status = "CURRENT" if observations else "UNAVAILABLE"
-                    except Exception as download_exc:
-                        logger.warning("BLS download fallback unavailable: %s", download_exc)
+                    except Exception as release_exc:
+                        logger.warning("BLS release fallback unavailable: %s", release_exc)
                         status = "UNAVAILABLE"
             self._bls_cache = (now, observations, status)
             snapshot["observations"].update(observations)
@@ -114,29 +116,66 @@ class MacroDataProvider:
                 result[key_name] = rows
         return result
 
-    def _bls_download_fallback(self) -> dict[str, list[dict[str, Any]]]:
-        """Use BLS's official time-series download files when the public API quota is exhausted."""
+    def _bls_release_fallback(self) -> dict[str, list[dict[str, Any]]]:
+        """Read official BLS HTML releases when the public API is quota-limited."""
         result: dict[str, list[dict[str, Any]]] = {}
-        for name, (survey, filename) in self.BLS_DOWNLOAD_FILES.items():
-            url = f"{self.BLS_DOWNLOAD_BASE}/{survey}/{filename}"
-            response = self.session.get(url, timeout=max(self.timeout_seconds, 15))
-            response.raise_for_status()
-            rows = self._parse_bls_download(response.text, self.BLS_SERIES[name])
-            if rows:
-                result[name] = rows[-24:]
 
-        # Unemployment is small enough to obtain from the current official release.
+        employment = self.session.get(self.BLS_EMPLOYMENT_RELEASE_URL, timeout=self.timeout_seconds)
+        employment.raise_for_status()
+        employment_text = self._html_text(employment.text)
+        employment_date = self._release_date(employment_text) or datetime.now(timezone.utc).date().isoformat()
+        period_match = re.search(r"THE EMPLOYMENT SITUATION\s*-\s*([A-Z]+)\s+(\d{4})", employment_text, re.I)
+        period = f"{period_match.group(1).title()}-{period_match.group(2)[-2:]}" if period_match else "Current"
+
+        unemployment = re.search(r"unemployment rate\s+(?:was|was at|stood at|was unchanged at)\s+(\d+(?:\.\d+)?)\s+percent", employment_text, re.I)
+        if unemployment:
+            result["us_unemployment"] = [{"period": period, "year": period_match.group(2) if period_match else str(datetime.now(timezone.utc).year), "value": float(unemployment.group(1)), "date": employment_date, "source": "U.S. Bureau of Labor Statistics"}]
+
+        payrolls = re.search(r"(?:total nonfarm payroll employment|nonfarm payroll employment).*?(?:increased|rose|decreased|fell|changed)\s+by\s+([+-]?\d[\d,]*)", employment_text, re.I | re.S)
+        if payrolls:
+            result["us_payrolls"] = [{"period": period, "year": period_match.group(2) if period_match else str(datetime.now(timezone.utc).year), "value": float(payrolls.group(1).replace(",", "")), "date": employment_date, "source": "U.S. Bureau of Labor Statistics"}]
+
+        earnings = re.search(r"average hourly earnings.*?(?:increased|rose|decreased|fell).*?to\s+\$(\d+\.\d+)", employment_text, re.I | re.S)
+        if not earnings:
+            earnings = re.search(r"average hourly earnings.*?\$(\d+\.\d+)", employment_text, re.I | re.S)
+        if earnings:
+            result["us_average_hourly_earnings"] = [{"period": period, "year": period_match.group(2) if period_match else str(datetime.now(timezone.utc).year), "value": float(earnings.group(1)), "date": employment_date, "source": "U.S. Bureau of Labor Statistics"}]
+
         try:
-            response = self.session.get("https://www.bls.gov/news.release/empsit.nr0.htm", timeout=self.timeout_seconds)
-            response.raise_for_status()
-            text = re.sub(r"<[^>]+>", " ", response.text)
-            text = re.sub(r"\s+", " ", unescape(text))
-            match = re.search(r"unemployment rate (?:was|was at|stood at)\s+(\d+(?:\.\d+)?)\s+percent", text, re.I)
-            if match:
-                result["us_unemployment"] = [{"period": "Current", "year": str(datetime.now(timezone.utc).year), "value": float(match.group(1)), "date": datetime.now(timezone.utc).date().isoformat(), "source": "U.S. Bureau of Labor Statistics"}]
+            cpi = self.session.get(self.BLS_CPI_RELEASE_URL, timeout=self.timeout_seconds)
+            cpi.raise_for_status()
+            cpi_text = self._html_text(cpi.text)
+            cpi_period = re.search(r"CONSUMER PRICE INDEX\s*-\s*([A-Z]+)\s+(\d{4})", cpi_text, re.I)
+            cpi_date = self._release_date(cpi_text) or employment_date
+            if cpi_period:
+                cpi_label = f"{cpi_period.group(1).title()}-{cpi_period.group(2)[-2:]}"
+                all_items = re.search(r"all items index increased\s+(\d+(?:\.\d+)?)\s+percent", cpi_text, re.I)
+                core = re.search(r"all items less food and energy index rose\s+(\d+(?:\.\d+)?)\s+percent", cpi_text, re.I)
+                if all_items:
+                    result["us_cpi"] = [{"period": cpi_label, "year": cpi_period.group(2), "value": float(all_items.group(1)), "date": cpi_date, "source": "U.S. Bureau of Labor Statistics", "measure": "12m_percent"}]
+                if core:
+                    result["us_core_cpi"] = [{"period": cpi_label, "year": cpi_period.group(2), "value": float(core.group(1)), "date": cpi_date, "source": "U.S. Bureau of Labor Statistics", "measure": "12m_percent"}]
         except Exception as exc:
-            logger.warning("BLS employment release fallback failed: %s", exc)
+            logger.warning("BLS CPI release fallback failed: %s", exc)
+
         return result
+
+    @staticmethod
+    def _html_text(html: str) -> str:
+        text = re.sub(r"<script[^>]*>.*?</script>", " ", html, flags=re.I | re.S)
+        text = re.sub(r"<style[^>]*>.*?</style>", " ", text, flags=re.I | re.S)
+        text = re.sub(r"<[^>]+>", " ", text)
+        return re.sub(r"\s+", " ", unescape(text)).strip()
+
+    @staticmethod
+    def _release_date(text: str) -> str | None:
+        match = re.search(r"(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}),\s+(\d{4})", text, re.I)
+        if not match:
+            return None
+        try:
+            return datetime.strptime(f"{match.group(1)} {match.group(2)} {match.group(3)}", "%B %d %Y").date().isoformat()
+        except ValueError:
+            return None
 
     @staticmethod
     def _parse_bls_download(text: str, series_id: str) -> list[dict[str, Any]]:
