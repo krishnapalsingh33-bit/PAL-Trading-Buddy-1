@@ -15,6 +15,26 @@ const MARKET_META: Record<string, { label: string; subtitle: string }> = {
     us500: { label: "US500", subtitle: "US Equity Index" },
 };
 
+// Backend MarketDataService returns canonical uppercase symbols (DXY,
+// GBPUSD, XAUUSD, USOIL, US10Y, US500). The UI metadata uses display keys
+// such as gold/oil. Resolve the backend snapshot explicitly instead of doing
+// a direct lowercase lookup, which previously made every card show
+// "Data unavailable" even when the API returned valid quotes.
+const MARKET_SYMBOL: Record<string, string> = {
+    dxy: "DXY",
+    gbpusd: "GBPUSD",
+    gold: "XAUUSD",
+    oil: "USOIL",
+    us10y: "US10Y",
+    us500: "US500",
+};
+
+function getMarket(markets: Record<string, unknown>, key: string): MarketQuote | undefined {
+    const symbol = MARKET_SYMBOL[key];
+    const direct = markets[symbol] ?? markets[symbol.toLowerCase()] ?? markets[key];
+    return direct as MarketQuote | undefined;
+}
+
 function formatPrice(market: MarketQuote | undefined) {
     if (!market || market.price == null) return "Data unavailable";
     return market.price.toLocaleString(undefined, { maximumFractionDigits: 5 });
@@ -28,7 +48,7 @@ function formatPercent(market: MarketQuote | undefined) {
 
 function freshness(market: MarketQuote | undefined) {
     if (!market) return "Unavailable";
-    if (market.status === "CURRENT" && market.freshness_seconds != null) {
+    if ((market.status === "CURRENT" || market.status === "RECENT") && market.freshness_seconds != null) {
         return market.freshness_seconds < 60
             ? `Updated ${Math.max(1, Math.round(market.freshness_seconds))}s ago`
             : `Updated ${Math.round(market.freshness_seconds / 60)}m ago`;
@@ -45,7 +65,7 @@ function biasFor(key: string, report: any) {
 export default function MacroDesk({ onPageChange }: Props) {
     const { data, isLoading, error } = usePAL();
     const report = data?.report?.macro;
-    const markets = report?.markets ?? {};
+    const markets = (report?.markets ?? {}) as Record<string, unknown>;
     const cards = useMemo(() => Object.keys(MARKET_META), []);
     const headlines = (report?.news ?? []).slice(0, 4);
     const sourceStatus = report?.macro_data?.source_status ?? {};
@@ -72,7 +92,7 @@ export default function MacroDesk({ onPageChange }: Props) {
 
                 <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                     {cards.map((key) => {
-                        const market = markets[key] as MarketQuote | undefined;
+                        const market = getMarket(markets, key);
                         const meta = MARKET_META[key];
                         const change = market?.change_percent ?? null;
                         const bias = biasFor(key, report);
@@ -89,7 +109,7 @@ export default function MacroDesk({ onPageChange }: Props) {
 
                 <section className="mt-6 grid gap-4 lg:grid-cols-[1.15fr_.85fr]">
                     <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5"><div className="flex items-center justify-between"><div><p className="text-xs uppercase tracking-widest text-emerald-300/70">News intelligence</p><h2 className="mt-1 text-lg font-semibold">Recent macro catalysts</h2></div><span className="text-xs text-zinc-600">{headlines.length} shown</span></div><div className="mt-4 grid gap-3 md:grid-cols-2">{headlines.map((item, index) => <div key={index} className="rounded-xl border border-zinc-900 bg-zinc-900/40 p-4"><p className="text-sm leading-5 text-zinc-300">{String((item as any).title ?? (item as any).headline ?? "Macro headline")}</p><p className="mt-2 text-[10px] uppercase tracking-widest text-zinc-600">{String((item as any).source ?? "Provider")}</p></div>)}{!headlines.length && <p className="text-sm text-zinc-600">No macro headlines currently supplied.</p>}</div></div>
-                    <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5"><p className="text-xs uppercase tracking-widest text-cyan-300/70">Data health</p><div className="mt-4 space-y-2">{Object.entries(sourceStatus).map(([source, status]) => <div key={source} className="flex items-center justify-between rounded-lg border border-zinc-900 bg-zinc-900/40 px-3 py-2"><span className="text-xs text-zinc-500">{source}</span><span className="text-[10px] uppercase tracking-wider text-zinc-400">{status}</span></div>)}{!Object.keys(sourceStatus).length && <p className="text-sm text-zinc-600">No macro observation sources reported.</p>}</div><p className="mt-4 text-xs leading-5 text-zinc-600">Provider failures remain isolated; PAL shows unavailable data rather than inventing values.</p></div>
+                    <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5"><p className="text-xs uppercase tracking-widest text-cyan-300/70">Data health</p><div className="mt-4 space-y-2">{Object.entries(sourceStatus).map(([source, status]) => <div key={source} className="flex items-center justify-between rounded-lg border border-zinc-900 bg-zinc-900/40 px-3 py-2"><span className="text-xs text-zinc-500">{source}</span><span className="text-[10px] uppercase tracking-wider text-zinc-400">{String(status)}</span></div>)}{!Object.keys(sourceStatus).length && <p className="text-sm text-zinc-600">No macro observation sources reported.</p>}</div><p className="mt-4 text-xs leading-5 text-zinc-600">Provider failures remain isolated; PAL shows unavailable data rather than inventing values.</p></div>
                 </section>
 
                 <p className="mt-5 text-xs text-zinc-600">Prices, changes, freshness and macro observations are displayed only when supplied by backend providers. No values are invented by the UI.</p>
