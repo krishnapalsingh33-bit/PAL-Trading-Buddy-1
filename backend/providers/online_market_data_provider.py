@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import logging
 import re
 from datetime import datetime, timezone
@@ -11,12 +10,11 @@ import requests
 from models.market_quote import MarketQuote
 from providers.market_data_provider import MarketDataProvider
 
-
 logger = logging.getLogger(__name__)
 
 
 class YahooMarketDataProvider(MarketDataProvider):
-    """Online snapshot provider isolated behind MarketDataProvider."""
+    """Online snapshot provider with Yahoo and CBOE fallbacks."""
 
     BASE_URLS = (
         "https://query1.finance.yahoo.com/v8/finance/chart",
@@ -26,6 +24,7 @@ class YahooMarketDataProvider(MarketDataProvider):
         "https://query1.finance.yahoo.com/v7/finance/quote",
         "https://query2.finance.yahoo.com/v7/finance/quote",
     )
+    CBOE_URL = "https://cdn.cboe.com/api/global/delayed_quotes/quotes"
     SOURCE = "Yahoo Finance"
 
     SYMBOL_MAP = {
@@ -36,6 +35,7 @@ class YahooMarketDataProvider(MarketDataProvider):
         "VIX": "^VIX", "VIXCLS": "^VIX",
         "US500": "^GSPC", "SPX": "^GSPC", "SP500": "^GSPC",
     }
+    CBOE_SYMBOLS = {"US500": "_SPX", "SPX": "_SPX", "SP500": "_SPX", "VIX": "_VIX", "VIXCLS": "_VIX"}
 
     def __init__(self, timeout_seconds: float = 8.0, session: requests.Session | None = None) -> None:
         self.timeout_seconds = timeout_seconds
@@ -87,7 +87,7 @@ class YahooMarketDataProvider(MarketDataProvider):
         return "STALE"
 
     def _request_chart(self, yahoo_symbol: str) -> dict[str, Any]:
-        last_error: Exception | None = None
+        last_error = None
         for base_url in self.BASE_URLS:
             try:
                 response = self.session.get(
@@ -97,9 +97,8 @@ class YahooMarketDataProvider(MarketDataProvider):
                 )
                 response.raise_for_status()
                 payload = response.json()
-                chart = payload.get("chart", {})
-                if chart.get("error"):
-                    raise RuntimeError(chart["error"].get("description", "Yahoo Finance returned an error."))
+                if (payload.get("chart") or {}).get("error"):
+                    raise RuntimeError((payload["chart"]["error"] or {}).get("description", "Yahoo Finance returned an error."))
                 return payload
             except Exception as exc:
                 last_error = exc
@@ -107,13 +106,12 @@ class YahooMarketDataProvider(MarketDataProvider):
         raise RuntimeError(f"All Yahoo chart endpoints failed: {last_error}")
 
     def _request_quote(self, yahoo_symbol: str) -> dict[str, Any]:
-        last_error: Exception | None = None
+        last_error = None
         for base_url in self.QUOTE_URLS:
             try:
                 response = self.session.get(base_url, params={"symbols": yahoo_symbol}, timeout=self.timeout_seconds)
                 response.raise_for_status()
-                payload = response.json()
-                results = ((payload.get("quoteResponse") or {}).get("result") or [])
+                results = ((response.json().get("quoteResponse") or {}).get("result") or [])
                 if results:
                     return results[0]
                 raise RuntimeError("Yahoo quote endpoint returned no result.")
@@ -123,17 +121,11 @@ class YahooMarketDataProvider(MarketDataProvider):
         raise RuntimeError(f"All Yahoo quote endpoints failed: {last_error}")
 
     def _request_quote_page(self, yahoo_symbol: str) -> dict[str, Any]:
-        """Last-resort Yahoo web-page fallback when JSON API endpoints are blocked."""
-        url = f"https://finance.yahoo.com/quote/{yahoo_symbol}/"
-        response = self.session.get(url, timeout=self.timeout_seconds)
+        response = self.session.get(f"https://finance.yahoo.com/quote/{yahoo_symbol}/", timeout=self.timeout_seconds)
         response.raise_for_status()
         html = response.text
-        patterns = (
-            r'"regularMarketPrice"\s*:\s*\{"raw"\s*:\s*([0-9.\-]+)',
-            r'"regularMarketPrice"\s*:\s*([0-9.\-]+)',
-        )
         price = None
-        for pattern in patterns:
+        for pattern in (r'"regularMarketPrice"\s*:\s*\{"raw"\s*:\s*([0-9.\-]+)', r'"regularMarketPrice"\s*:\s*([0-9.\-]+)'):
             match = re.search(pattern, html)
             if match:
                 price = self._number(match.group(1))
@@ -141,36 +133,52 @@ class YahooMarketDataProvider(MarketDataProvider):
                     break
         if price is None:
             raise RuntimeError("Yahoo Finance page contained no regularMarketPrice.")
-
         previous = None
-        for pattern in (
-            r'"regularMarketPreviousClose"\s*:\s*\{"raw"\s*:\s*([0-9.\-]+)',
-            r'"regularMarketPreviousClose"\s*:\s*([0-9.\-]+)',
-        ):
+        for pattern in (r'"regularMarketPreviousClose"\s*:\s*\{"raw"\s*:\s*([0-9.\-]+)', r'"regularMarketPreviousClose"\s*:\s*([0-9.\-]+)'):
             match = re.search(pattern, html)
             if match:
                 previous = self._number(match.group(1))
                 if previous is not None:
                     break
-
         timestamp = None
         match = re.search(r'"regularMarketTime"\s*:\s*([0-9]+)', html)
         if match:
             timestamp = self._timestamp(match.group(1))
         return {"regularMarketPrice": price, "regularMarketPreviousClose": previous, "regularMarketTime": timestamp}
 
+    def _request_cboe(self, cboe_symbol: str) -> dict[str, Any]:
+        response = self.session.get(f"{self.CBOE_URL}/{cboe_symbol}.json", timeout=self.timeout_seconds)
+        response.raise_for_status()
+        payload = response.json()
+        data = payload.get("data") if isinstance(payload, dict) else None
+        if not isinstance(data, dict):
+            raise RuntimeError("CBOE returned no quote data.")
+        return data
+
+    def _quote_from_cboe(self, normalized: str) -> MarketQuote:
+        data = self._request_cboe(self.CBOE_SYMBOLS[normalized])
+        price = self._number(data.get("current_price") or data.get("last_price") or data.get("last"))
+        previous = self._number(data.get("prev_day_close") or data.get("previous_close") or data.get("prev"))
+        timestamp_text = data.get("last_trade_time") or data.get("timestamp")
+        market_time = None
+        if isinstance(timestamp_text, str):
+            try:
+                market_time = datetime.fromisoformat(timestamp_text.replace("Z", "+00:00")).astimezone(timezone.utc).isoformat()
+            except ValueError:
+                pass
+        if price is None:
+            raise RuntimeError("CBOE returned no current price.")
+        return self._build_quote(normalized, price, previous, market_time, source="Cboe Global Markets")
+
     def _quote_from_chart(self, normalized: str, yahoo_symbol: str) -> MarketQuote:
-        payload = self._request_chart(yahoo_symbol)
-        results = (payload.get("chart") or {}).get("result") or []
-        if not results:
+        result = ((self._request_chart(yahoo_symbol).get("chart") or {}).get("result") or [])
+        if not result:
             raise RuntimeError("Yahoo Finance returned no quote data.")
-        result = results[0]
-        meta = result.get("meta") or {}
+        meta = result[0].get("meta") or {}
         price = self._number(meta.get("regularMarketPrice") or meta.get("postMarketPrice") or meta.get("preMarketPrice"))
         previous = self._number(meta.get("previousClose") or meta.get("chartPreviousClose"))
-        timestamps = result.get("timestamp") or []
-        quote_rows = (result.get("indicators") or {}).get("quote") or []
-        closes = quote_rows[0].get("close", []) if quote_rows else []
+        timestamps = result[0].get("timestamp") or []
+        closes = (((result[0].get("indicators") or {}).get("quote") or [{}])[0]).get("close", [])
         if price is None:
             for close in reversed(closes):
                 price = self._number(close)
@@ -183,43 +191,48 @@ class YahooMarketDataProvider(MarketDataProvider):
                     break
         if price is None:
             raise RuntimeError("Yahoo Finance returned no current price.")
-        market_time = self._timestamp(meta.get("regularMarketTime") or (timestamps[-1] if timestamps else None))
-        return self._build_quote(normalized, price, previous, market_time)
+        return self._build_quote(normalized, price, previous, self._timestamp(meta.get("regularMarketTime") or (timestamps[-1] if timestamps else None)))
 
     def _quote_from_quote_endpoint(self, normalized: str, yahoo_symbol: str) -> MarketQuote:
         row = self._request_quote(yahoo_symbol)
         price = self._number(row.get("regularMarketPrice") or row.get("postMarketPrice") or row.get("preMarketPrice"))
         previous = self._number(row.get("regularMarketPreviousClose") or row.get("previousClose"))
-        market_time = self._timestamp(row.get("regularMarketTime"))
         if price is None:
             raise RuntimeError("Yahoo quote endpoint returned no current price.")
-        return self._build_quote(normalized, price, previous, market_time)
+        return self._build_quote(normalized, price, previous, self._timestamp(row.get("regularMarketTime")))
 
     def _quote_from_page(self, normalized: str, yahoo_symbol: str) -> MarketQuote:
         row = self._request_quote_page(yahoo_symbol)
         return self._build_quote(normalized, row["regularMarketPrice"], row.get("regularMarketPreviousClose"), row.get("regularMarketTime"))
 
-    def _build_quote(self, normalized: str, price: float, previous: float | None, market_time: str | None) -> MarketQuote:
+    def _build_quote(self, normalized: str, price: float, previous: float | None, market_time: str | None, source: str | None = None) -> MarketQuote:
         change = price - previous if previous is not None else None
         change_percent = (change / previous) * 100 if change is not None and previous not in (None, 0) else None
         unit = "yield_percent" if normalized in {"US10Y", "10Y", "TNX"} else "price"
-        return MarketQuote(symbol=normalized, price=price, previous_price=previous, change=change, change_percent=change_percent, timestamp=market_time, source=self.SOURCE, status=self._status(market_time), unit=unit)
+        return MarketQuote(symbol=normalized, price=price, previous_price=previous, change=change, change_percent=change_percent, timestamp=market_time, source=source or self.SOURCE, status=self._status(market_time), unit=unit)
 
     def get_quote(self, symbol: str) -> MarketQuote:
         normalized = symbol.upper()
         yahoo_symbol = self.yahoo_symbol(normalized)
-        if yahoo_symbol is None:
-            return MarketQuote(symbol=normalized, source=self.SOURCE, status="UNAVAILABLE", reason="No online symbol mapping is configured.")
         try:
-            return self._quote_from_chart(normalized, yahoo_symbol)
-        except Exception as chart_exc:
-            logger.warning("Yahoo chart provider failed for %s (%s); trying quote endpoint.", normalized, chart_exc)
-            try:
-                return self._quote_from_quote_endpoint(normalized, yahoo_symbol)
-            except Exception as quote_exc:
-                logger.warning("Yahoo quote endpoint failed for %s (%s); trying web page.", normalized, quote_exc)
+            if yahoo_symbol:
+                try:
+                    return self._quote_from_chart(normalized, yahoo_symbol)
+                except Exception as exc:
+                    logger.warning("Yahoo chart failed for %s: %s", normalized, exc)
+                try:
+                    return self._quote_from_quote_endpoint(normalized, yahoo_symbol)
+                except Exception as exc:
+                    logger.warning("Yahoo quote failed for %s: %s", normalized, exc)
                 try:
                     return self._quote_from_page(normalized, yahoo_symbol)
-                except Exception as page_exc:
-                    logger.warning("Yahoo web page fallback failed for %s (%s): %s", normalized, yahoo_symbol, page_exc)
-                    return MarketQuote(symbol=normalized, source=self.SOURCE, status="UNAVAILABLE", reason="Online market data is temporarily unavailable.")
+                except Exception as exc:
+                    logger.warning("Yahoo page fallback failed for %s: %s", normalized, exc)
+            if normalized in self.CBOE_SYMBOLS:
+                try:
+                    return self._quote_from_cboe(normalized)
+                except Exception as exc:
+                    logger.warning("CBOE fallback failed for %s: %s", normalized, exc)
+            return MarketQuote(symbol=normalized, source=self.SOURCE, status="UNAVAILABLE", reason="Online market data is temporarily unavailable.")
+        except Exception:
+            return MarketQuote(symbol=normalized, source=self.SOURCE, status="UNAVAILABLE", reason="Online market data is temporarily unavailable.")
