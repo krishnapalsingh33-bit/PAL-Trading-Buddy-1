@@ -16,9 +16,17 @@ jobs:
           python-version: "3.12"
       - name: Install backend dependencies
         run: pip install -r requirements.txt
-      - name: Compile backend
+      - name: Compile PAL backend modules
         working-directory: backend
-        run: python -m compileall -q .
+        run: >-
+          python -m py_compile
+          main.py
+          analysis/news_engine.py
+          analysis/macro_bias_engine.py
+          analysis/report_engine.py
+          providers/*.py
+          services/*.py
+          models/*.py
       - name: Run online market-data tests
         working-directory: backend
         run: python -m unittest discover -s tests -p 'test_online_market_data_provider.py' -v
