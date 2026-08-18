@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import os
-import re
 import threading
 import time
 from datetime import datetime, timezone
@@ -19,7 +18,7 @@ class MacroDataProvider:
     BLS_V1_URL = "https://api.bls.gov/publicAPI/v1/timeseries/data/"
     BLS_V2_URL = "https://api.bls.gov/publicAPI/v2/timeseries/data/"
     FRED_URL = "https://api.stlouisfed.org/fred/series/observations"
-    ONS_DATA_URL = "https://api.beta.ons.gov.uk/v1/data"
+    ONS_OBSERVATIONS_URL = "https://api.beta.ons.gov.uk/v1/datasets/cpih01/editions/time-series/versions/{version}/observations"
 
     BLS_SERIES = {
         "us_cpi": "CUSR0000SA0",
@@ -35,10 +34,7 @@ class MacroDataProvider:
         "us_10y_2y_spread": "T10Y2Y",
         "vix": "VIXCLS",
     }
-    ONS_SERIES = {
-        "uk_cpi": "d7g7",
-        "uk_cpih": "l55o",
-    }
+
     BLS_CACHE_TTL_SECONDS = 15 * 60
     FAILED_SOURCE_CACHE_TTL_SECONDS = 60
     _bls_cache: tuple[float, dict[str, list[dict[str, Any]]], str] | None = None
@@ -53,7 +49,11 @@ class MacroDataProvider:
         })
 
     def get_snapshot(self) -> dict[str, Any]:
-        snapshot = {"source_status": {}, "observations": {}, "fetched_at": datetime.now(timezone.utc).isoformat()}
+        snapshot = {
+            "source_status": {},
+            "observations": {},
+            "fetched_at": datetime.now(timezone.utc).isoformat(),
+        }
         self._load_bls(snapshot)
         self._load_ons(snapshot)
         self._load_fred(snapshot)
@@ -93,8 +93,6 @@ class MacroDataProvider:
             "startyear": "2025",
             "endyear": "2026",
         }
-        # Only registered BLS v2 calls should include registrationKey. An empty
-        # key can cause the service to count the request against a blank-key quota.
         if version == "v2":
             registration_key = os.getenv("BLS_REGISTRATION_KEY", "").strip()
             if registration_key:
@@ -121,43 +119,59 @@ class MacroDataProvider:
                     continue
                 value = self._number(item.get("value"))
                 if value is not None:
-                    rows.append({"period": item.get("periodName"), "year": item.get("year"), "value": value, "date": self._bls_date(item), "source": "U.S. Bureau of Labor Statistics"})
+                    rows.append({
+                        "period": item.get("periodName"),
+                        "year": item.get("year"),
+                        "value": value,
+                        "date": self._bls_date(item),
+                        "source": "U.S. Bureau of Labor Statistics",
+                    })
             if rows:
                 observations[key] = rows
         return observations
 
     def _load_ons(self, snapshot: dict[str, Any]) -> None:
-        observations: dict[str, list[dict[str, Any]]] = {}
         try:
-            for key, series_id in self.ONS_SERIES.items():
-                uri = f"/economy/inflationandpriceindices/timeseries/mm23/{series_id}"
-                response = self.session.get(self.ONS_DATA_URL, params={"uri": uri}, timeout=self.timeout_seconds)
-                response.raise_for_status()
-                body = response.json() or {}
-                rows = self._parse_ons_data(body)
-                if rows:
-                    observations[key] = rows[-24:]
-            snapshot["observations"].update(observations)
-            snapshot["source_status"]["ons"] = "CURRENT" if observations else "UNAVAILABLE"
+            # ONS documents the wildcard form for returning the full time series
+            # for one geography/aggregate combination. Version 6 is the public
+            # time-series version documented in the ONS API examples.
+            response = self.session.get(
+                self.ONS_OBSERVATIONS_URL.format(version="6"),
+                params={
+                    "time": "*",
+                    "geography": "K02000001",
+                    "aggregate": "cpih1dim1A0",
+                },
+                timeout=self.timeout_seconds,
+            )
+            response.raise_for_status()
+            body = response.json() or {}
+            raw = body.get("observations") or []
+            rows = []
+            # With a wildcard, the response provides the time dimension metadata
+            # as a code list; the observation array contains the values in order.
+            # Preserve the raw time metadata when available rather than guessing.
+            time_dimension = (body.get("dimensions") or {}).get("time") or {}
+            time_option = time_dimension.get("option") if isinstance(time_dimension, dict) else None
+            date = None
+            if isinstance(time_option, dict):
+                date = time_option.get("id") or time_option.get("label")
+            for item in raw if isinstance(raw, list) else []:
+                if not isinstance(item, dict):
+                    continue
+                value = self._number(item.get("observation"))
+                if value is not None:
+                    rows.append({
+                        "date": date,
+                        "value": value,
+                        "source": "UK Office for National Statistics",
+                        "dataset": "CPIH",
+                    })
+            snapshot["observations"]["uk_cpih"] = rows[-24:]
+            snapshot["source_status"]["ons"] = "CURRENT" if rows else "UNAVAILABLE"
         except Exception as exc:
             logger.warning("ONS macro provider failed: %s", exc)
-            snapshot["observations"].update(observations)
-            snapshot["source_status"]["ons"] = "CURRENT" if observations else "UNAVAILABLE"
-
-    def _parse_ons_data(self, body: dict[str, Any]) -> list[dict[str, Any]]:
-        raw = body.get("data") or body.get("observations") or []
-        rows: list[dict[str, Any]] = []
-        if isinstance(raw, dict):
-            raw = raw.get("observations") or raw.get("data") or []
-        for item in raw if isinstance(raw, list) else []:
-            if not isinstance(item, dict):
-                continue
-            value = self._number(item.get("observation") if "observation" in item else item.get("value"))
-            if value is None:
-                continue
-            date = item.get("time") or item.get("date")
-            rows.append({"date": date, "value": value, "source": "UK Office for National Statistics"})
-        return rows
+            snapshot["source_status"]["ons"] = "UNAVAILABLE"
 
     def _load_fred(self, snapshot: dict[str, Any]) -> None:
         api_key = os.getenv("FRED_API_KEY", "").strip()
@@ -167,7 +181,17 @@ class MacroDataProvider:
         try:
             observations = {}
             for key, series_id in self.FRED_SERIES.items():
-                response = self.session.get(self.FRED_URL, params={"series_id": series_id, "api_key": api_key, "file_type": "json", "sort_order": "asc", "limit": 24}, timeout=self.timeout_seconds)
+                response = self.session.get(
+                    self.FRED_URL,
+                    params={
+                        "series_id": series_id,
+                        "api_key": api_key,
+                        "file_type": "json",
+                        "sort_order": "asc",
+                        "limit": 24,
+                    },
+                    timeout=self.timeout_seconds,
+                )
                 response.raise_for_status()
                 rows = []
                 for item in (response.json() or {}).get("observations") or []:
