@@ -44,8 +44,6 @@ class OfficialPolicyProvider:
         return float(value)
 
     def _fed(self) -> dict[str, Any]:
-        # Primary: official FOMC statement. The statement is the authoritative
-        # policy decision and contains the target range and vote.
         try:
             index = self.session.get(self.FED_INDEX_URL, timeout=self.timeout_seconds)
             index.raise_for_status()
@@ -65,8 +63,6 @@ class OfficialPolicyProvider:
             statement.raise_for_status()
             text = self._clean(statement.text)
 
-            # Fed statements commonly use fractional notation: "3-1/2 to
-            # 3-3/4 percent". Also accept decimal/range variants.
             number = r"(?:\d+(?:\.\d+)?|\d+-\d+/\d+)"
             match = re.search(
                 rf"target range for the federal funds rate at\s*({number})\s*(?:to|–|-)\s*({number})\s*percent",
@@ -78,12 +74,16 @@ class OfficialPolicyProvider:
 
             lower = self._rate_value(match.group(1))
             upper = self._rate_value(match.group(2))
+
+            # Capture the vote even if the exact sentence wording changes.
             vote = None
             vote_match = re.search(
-                r"approved the following statement for release by a\s*(\d+)\s*[–-]\s*(\d+)\s*vote",
+                r"approved.*?statement.*?release.*?by\s+a\s+(\d+)\s*[–—-]\s*(\d+)\s+vote",
                 text,
-                re.I,
+                re.I | re.S,
             )
+            if not vote_match:
+                vote_match = re.search(r"\b(\d+)\s*[–—-]\s*(\d+)\s+vote\b", text, re.I)
             if vote_match:
                 vote = {"for": int(vote_match.group(1)), "against": int(vote_match.group(2))}
 
@@ -107,7 +107,6 @@ class OfficialPolicyProvider:
                 "status": "CURRENT",
             }
         except Exception as official_exc:
-            # Fallback: structured FRED target-range observations.
             try:
                 response = self.session.get(self.FED_FRED_URL, timeout=self.timeout_seconds)
                 response.raise_for_status()
