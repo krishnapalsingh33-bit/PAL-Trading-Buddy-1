@@ -132,9 +132,6 @@ class MacroDataProvider:
 
     def _load_ons(self, snapshot: dict[str, Any]) -> None:
         try:
-            # ONS documents the wildcard form for returning the full time series
-            # for one geography/aggregate combination. Version 6 is the public
-            # time-series version documented in the ONS API examples.
             response = self.session.get(
                 self.ONS_OBSERVATIONS_URL.format(version="6"),
                 params={
@@ -148,25 +145,31 @@ class MacroDataProvider:
             body = response.json() or {}
             raw = body.get("observations") or []
             rows = []
-            # With a wildcard, the response provides the time dimension metadata
-            # as a code list; the observation array contains the values in order.
-            # Preserve the raw time metadata when available rather than guessing.
-            time_dimension = (body.get("dimensions") or {}).get("time") or {}
-            time_option = time_dimension.get("option") if isinstance(time_dimension, dict) else None
-            date = None
-            if isinstance(time_option, dict):
-                date = time_option.get("id") or time_option.get("label")
             for item in raw if isinstance(raw, list) else []:
                 if not isinstance(item, dict):
                     continue
                 value = self._number(item.get("observation"))
-                if value is not None:
-                    rows.append({
-                        "date": date,
-                        "value": value,
-                        "source": "UK Office for National Statistics",
-                        "dataset": "CPIH",
-                    })
+                if value is None:
+                    continue
+                # For a wildcard time query ONS attaches the time dimension to
+                # each observation. This is the authoritative mapping between
+                # each CPIH value and its month; do not assign one date to all rows.
+                item_dimensions = item.get("dimensions") or {}
+                time_dimension = item_dimensions.get("Time") or item_dimensions.get("time") or {}
+                date = None
+                if isinstance(time_dimension, dict):
+                    date = time_dimension.get("id") or time_dimension.get("label")
+                    if not date:
+                        option = time_dimension.get("option") or {}
+                        if isinstance(option, dict):
+                            date = option.get("id") or option.get("label")
+                rows.append({
+                    "date": date,
+                    "value": value,
+                    "source": "UK Office for National Statistics",
+                    "dataset": "CPIH",
+                })
+            rows = [row for row in rows if row.get("date")]
             snapshot["observations"]["uk_cpih"] = rows[-24:]
             snapshot["source_status"]["ons"] = "CURRENT" if rows else "UNAVAILABLE"
         except Exception as exc:
