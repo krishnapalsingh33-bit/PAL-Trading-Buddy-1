@@ -10,14 +10,15 @@ import requests
 class TreasuryYieldProvider:
     """Official U.S. Treasury daily par-yield provider for 2Y/10Y."""
 
-    URL = "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/pages/xml"
+    XML_URL = "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/pages/xml"
+    TEXT_URL = "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/TextView"
 
     def __init__(self, timeout_seconds: float = 8.0) -> None:
         self.timeout_seconds = timeout_seconds
         self.session = requests.Session()
         self.session.headers.update({
             "User-Agent": "PAL-Trading-Buddy/2.2 (official Treasury rates)",
-            "Accept": "application/xml,text/xml,*/*",
+            "Accept": "application/xml,text/xml,text/html,*/*",
         })
 
     @staticmethod
@@ -30,24 +31,12 @@ class TreasuryYieldProvider:
         except (TypeError, ValueError):
             return None
 
-    def get_snapshot(self) -> dict[str, list[dict[str, Any]]]:
-        year = datetime.now(timezone.utc).year
-        response = self.session.get(
-            self.URL,
-            params={"data": "daily_treasury_yield_curve", "field_tdr_date_value": year},
-            timeout=self.timeout_seconds,
-        )
-        response.raise_for_status()
-        xml = response.text
+    @staticmethod
+    def _rows_from_xml(xml: str) -> dict[str, list[dict[str, Any]]]:
         observations = {"us_2y": [], "us_10y": []}
-
-        # Treasury's current XML feed uses Atom <entry> elements and namespaced
-        # fields such as d:NEW_DATE / d:BC_2YEAR. Accept both namespaced and
-        # non-namespaced forms so the parser survives feed formatting changes.
         entries = re.findall(r"<(?:\w+:)?entry\b[^>]*>(.*?)</(?:\w+:)?entry>", xml, flags=re.I | re.S)
         if not entries:
             entries = re.findall(r"<item\b[^>]*>(.*?)</item>", xml, flags=re.I | re.S)
-
         for item in entries:
             date_match = re.search(r"<(?:\w+:)?NEW_DATE\b[^>]*>(.*?)</(?:\w+:)?NEW_DATE>", item, flags=re.I | re.S)
             if not date_match:
@@ -58,25 +47,71 @@ class TreasuryYieldProvider:
                 match = re.search(rf"<(?:\w+:)?{tag}\b[^>]*>(.*?)</(?:\w+:)?{tag}>", item, flags=re.I | re.S)
                 if not match:
                     return None
-                return self._number(re.sub(r"<[^>]+>", "", match.group(1)).strip())
+                return TreasuryYieldProvider._number(re.sub(r"<[^>]+>", "", match.group(1)).strip())
 
             two = value("BC_2YEAR")
             ten = value("BC_10YEAR")
             if two is not None:
-                observations["us_2y"].append({
-                    "date": date,
-                    "value": two,
-                    "source": "U.S. Department of the Treasury",
-                    "series": "2-Year Treasury Par Yield",
-                })
+                observations["us_2y"].append({"date": date, "value": two, "source": "U.S. Department of the Treasury", "series": "2-Year Treasury Par Yield"})
             if ten is not None:
-                observations["us_10y"].append({
-                    "date": date,
-                    "value": ten,
-                    "source": "U.S. Department of the Treasury",
-                    "series": "10-Year Treasury Par Yield",
-                })
-
-        if not observations["us_2y"] and not observations["us_10y"]:
-            raise RuntimeError("Treasury XML contained no usable 2Y/10Y observations.")
+                observations["us_10y"].append({"date": date, "value": ten, "source": "U.S. Department of the Treasury", "series": "10-Year Treasury Par Yield"})
         return {key: rows[-24:] for key, rows in observations.items() if rows}
+
+    @staticmethod
+    def _rows_from_text(html: str) -> dict[str, list[dict[str, Any]]]:
+        """Parse the Treasury TextView table as a fallback to the XML feed."""
+        observations = {"us_2y": [], "us_10y": []}
+        # TextView renders a table with Date, 1 Mo ... 2 Yr ... 10 Yr ... columns.
+        # Capture table rows and map the two maturity columns by header order.
+        table_match = re.search(r"<table[^>]*>(.*?)</table>", html, flags=re.I | re.S)
+        if not table_match:
+            return observations
+        table = table_match.group(1)
+        header_cells = re.findall(r"<th[^>]*>(.*?)</th>", table, flags=re.I | re.S)
+        headers = [re.sub(r"<[^>]+>", "", cell).strip().lower() for cell in header_cells]
+        try:
+            date_index = headers.index("date")
+            two_index = headers.index("2 yr")
+            ten_index = headers.index("10 yr")
+        except ValueError:
+            return observations
+
+        for row in re.findall(r"<tr[^>]*>(.*?)</tr>", table, flags=re.I | re.S):
+            cells = re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", row, flags=re.I | re.S)
+            values = [re.sub(r"<[^>]+>", "", cell).strip() for cell in cells]
+            if len(values) <= max(date_index, two_index, ten_index):
+                continue
+            date = values[date_index]
+            two = TreasuryYieldProvider._number(values[two_index])
+            ten = TreasuryYieldProvider._number(values[ten_index])
+            if two is not None:
+                observations["us_2y"].append({"date": date, "value": two, "source": "U.S. Department of the Treasury", "series": "2-Year Treasury Par Yield"})
+            if ten is not None:
+                observations["us_10y"].append({"date": date, "value": ten, "source": "U.S. Department of the Treasury", "series": "10-Year Treasury Par Yield"})
+        return {key: rows[-24:] for key, rows in observations.items() if rows}
+
+    def get_snapshot(self) -> dict[str, list[dict[str, Any]]]:
+        year = datetime.now(timezone.utc).year
+        try:
+            response = self.session.get(
+                self.XML_URL,
+                params={"data": "daily_treasury_yield_curve", "field_tdr_date_value": year},
+                timeout=self.timeout_seconds,
+            )
+            response.raise_for_status()
+            rows = self._rows_from_xml(response.text)
+            if rows:
+                return rows
+        except Exception:
+            pass
+
+        response = self.session.get(
+            self.TEXT_URL,
+            params={"type": "daily_treasury_yield_curve", "field_tdr_date_value": year},
+            timeout=self.timeout_seconds,
+        )
+        response.raise_for_status()
+        rows = self._rows_from_text(response.text)
+        if not rows:
+            raise RuntimeError("Treasury XML and TextView contained no usable 2Y/10Y observations.")
+        return rows
