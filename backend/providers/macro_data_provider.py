@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import csv
-import io
 import logging
 import os
+import re
 import threading
 import time
 from datetime import datetime, timezone
@@ -20,7 +19,7 @@ class MacroDataProvider:
     BLS_V1_URL = "https://api.bls.gov/publicAPI/v1/timeseries/data/"
     BLS_V2_URL = "https://api.bls.gov/publicAPI/v2/timeseries/data/"
     FRED_URL = "https://api.stlouisfed.org/fred/series/observations"
-    ONS_FILTERS_URL = "https://api.beta.ons.gov.uk/v1/filters?submitted=true"
+    ONS_BASE_URL = "https://api.beta.ons.gov.uk/v1"
 
     BLS_SERIES = {
         "us_cpi": "CUSR0000SA0",
@@ -50,7 +49,7 @@ class MacroDataProvider:
         self.session = requests.Session()
         self.session.headers.update({
             "User-Agent": "PAL-Trading-Buddy/2.2 (macro intelligence)",
-            "Accept": "application/json,text/csv",
+            "Accept": "application/json,text/plain,*/*",
         })
 
     def get_snapshot(self) -> dict[str, Any]:
@@ -145,7 +144,7 @@ class MacroDataProvider:
                 snapshot["source_status"]["ons"] = status
                 return
             try:
-                rows = self._fetch_ons_cpih_filtered()
+                rows = self._fetch_ons_cpih()
                 status = "CURRENT" if rows else "UNAVAILABLE"
             except Exception as exc:
                 logger.warning("ONS macro provider failed: %s", exc)
@@ -155,65 +154,71 @@ class MacroDataProvider:
             snapshot["observations"]["uk_cpih"] = rows
             snapshot["source_status"]["ons"] = status
 
-    def _fetch_ons_cpih_filtered(self) -> list[dict[str, Any]]:
-        # ONS documents the filter service as the supported way to request
-        # arbitrary CMD dimensions. Filtering only geography leaves the time
-        # dimension intact, so the returned CSV preserves the actual month for
-        # every observation instead of the malformed wildcard mapping used by
-        # the old observations call.
-        payload = {
-            "dataset": {"id": "cpih01", "edition": "time-series", "version": 6},
-            "dimensions": [{"name": "geography", "options": ["K02000001"]}],
-        }
-        response = self.session.post(self.ONS_FILTERS_URL, json=payload, timeout=self.timeout_seconds)
+    def _fetch_ons_cpih(self) -> list[dict[str, Any]]:
+        """Fetch the latest CPIH months directly, avoiding asynchronous filter outputs.
+
+        ONS documents the CMD observations endpoint as accepting one option for
+        each dimension and also documents the time dimension as a human-readable
+        label such as ``Oct-11``. We first retrieve the available time options,
+        select the latest 24 months, then request each exact month. This costs
+        at most 25 ONS requests and preserves an unambiguous date/value pair.
+        """
+        options_url = (
+            f"{self.ONS_BASE_URL}/datasets/cpih01/editions/time-series/versions/6"
+            "/dimensions/time/options"
+        )
+        response = self.session.get(options_url, params={"limit": 1000}, timeout=self.timeout_seconds)
         response.raise_for_status()
-        filter_body = response.json() or {}
-        output = (filter_body.get("links") or {}).get("filter_output") or {}
-        output_url = output.get("href") if isinstance(output, dict) else None
-        if not output_url:
-            output_id = output.get("id") if isinstance(output, dict) else None
-            if output_id:
-                output_url = f"https://api.beta.ons.gov.uk/v1/filter-outputs/{output_id}"
-        if not output_url:
-            raise RuntimeError("ONS filter response did not provide a filter output.")
+        body = response.json() or {}
+        options = body.get("items") or []
+        dated_options: list[tuple[datetime, str]] = []
+        for item in options:
+            label = item.get("label") or item.get("option")
+            if not isinstance(label, str):
+                continue
+            match = re.fullmatch(r"([A-Za-z]{3})-(\d{2})", label.strip())
+            if not match:
+                continue
+            try:
+                dated_options.append((datetime.strptime(label.strip(), "%b-%y"), label.strip()))
+            except ValueError:
+                continue
 
-        output_response = self.session.get(output_url, timeout=self.timeout_seconds)
-        output_response.raise_for_status()
-        output_body = output_response.json() or {}
-        csv_link = ((output_body.get("downloads") or {}).get("csv") or {}).get("href")
-        if not csv_link:
-            raise RuntimeError("ONS filter output did not provide a CSV download.")
+        if not dated_options:
+            raise RuntimeError("ONS returned no usable CPIH time options.")
 
-        csv_response = self.session.get(csv_link, timeout=self.timeout_seconds)
-        csv_response.raise_for_status()
-        return self._parse_ons_csv(csv_response.text)
-
-    def _parse_ons_csv(self, text: str) -> list[dict[str, Any]]:
-        reader = csv.DictReader(io.StringIO(text))
+        latest_labels = [label for _, label in sorted(dated_options)[-24:]]
         rows: list[dict[str, Any]] = []
-        for item in reader:
-            normalized = {str(k).strip().lower(): (v.strip() if isinstance(v, str) else v) for k, v in item.items()}
-            date = (
-                normalized.get("time")
-                or normalized.get("date")
-                or normalized.get("time_period")
-                or normalized.get("time period")
+        observation_url = (
+            f"{self.ONS_BASE_URL}/datasets/cpih01/editions/time-series/versions/6/observations"
+        )
+        for label in latest_labels:
+            response = self.session.get(
+                observation_url,
+                params={
+                    "time": label,
+                    "geography": "K02000001",
+                    "aggregate": "cpih1dim1A0",
+                },
+                timeout=self.timeout_seconds,
             )
-            value = self._number(
-                normalized.get("observation")
-                or normalized.get("value")
-                or normalized.get("obs_value")
-            )
-            if value is None or not date:
+            response.raise_for_status()
+            body = response.json() or {}
+            observations = body.get("observations") or []
+            if not observations:
+                continue
+            value = self._number(observations[0].get("observation"))
+            if value is None:
                 continue
             rows.append({
-                "date": date,
+                "date": label,
                 "value": value,
                 "source": "UK Office for National Statistics",
                 "dataset": "CPIH",
             })
-        rows.sort(key=lambda row: str(row["date"]))
-        return rows[-24:]
+
+        rows.sort(key=lambda row: datetime.strptime(row["date"], "%b-%y"))
+        return rows
 
     def _load_fred(self, snapshot: dict[str, Any]) -> None:
         api_key = os.getenv("FRED_API_KEY", "").strip()
