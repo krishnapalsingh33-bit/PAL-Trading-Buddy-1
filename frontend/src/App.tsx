@@ -6,6 +6,7 @@ import MacroDesk from "./pages/MacroDesk";
 import MacroView from "./pages/MacroView";
 import MacroCalendar from "./pages/MacroCalendar";
 import DailyReports from "./pages/DailyReports";
+import PalPageShell from "./components/layout/PalPageShell";
 import type { Page } from "./components/layout/Sidebar";
 
 type AppPage = Page;
@@ -31,14 +32,18 @@ function App() {
 
     const navigate = (nextPage: AppPage) => {
         const nextHash = `#${nextPage}`;
-        if (window.location.hash !== nextHash) {
-            window.location.hash = nextHash;
-        } else {
-            setPage(nextPage);
-        }
+        if (window.location.hash !== nextHash) window.location.hash = nextHash;
+        else setPage(nextPage);
     };
 
-    if (page === "journal") return <JournalTest />;
+    if (page === "journal") {
+        return (
+            <PalPageShell page="journal" onPageChange={navigate}>
+                <JournalTest />
+            </PalPageShell>
+        );
+    }
+
     if (page === "macro-desk") return <MacroDesk onPageChange={navigate} />;
     if (page === "macro-view") return <MacroView onPageChange={navigate} />;
     if (page === "macro-calendar") return <MacroCalendar onPageChange={navigate} />;
