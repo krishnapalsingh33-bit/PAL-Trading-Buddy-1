@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import PalPageShell from "../components/layout/PalPageShell";
 import type { Page } from "../components/layout/Sidebar";
 import { usePAL } from "../hooks/usePAL";
-import type { MarketQuote } from "../types/pal";
+import type { MarketQuote, MacroObservation } from "../types/pal";
 
 type Props = { onPageChange: (page: Page) => void };
 
@@ -25,14 +25,45 @@ function pctText(market?: MarketQuote) {
     return `${market.change_percent >= 0 ? "+" : ""}${market.change_percent.toFixed(2)}%`;
 }
 
+function latest(observations: Record<string, MacroObservation[]> | undefined, key: string) {
+    const rows = observations?.[key];
+    return rows?.length ? rows[rows.length - 1] : undefined;
+}
+
+function previous(observations: Record<string, MacroObservation[]> | undefined, key: string) {
+    const rows = observations?.[key];
+    return rows && rows.length > 1 ? rows[rows.length - 2] : undefined;
+}
+
+function observationChange(observations: Record<string, MacroObservation[]> | undefined, key: string) {
+    const current = latest(observations, key)?.value;
+    const prior = previous(observations, key)?.value;
+    if (current == null || prior == null || prior === 0) return null;
+    return ((current - prior) / Math.abs(prior)) * 100;
+}
+
 export default function MacroView({ onPageChange }: Props) {
     const { data, error } = usePAL();
     const markets = data?.report?.macro?.markets ?? {};
+    const macro = data?.report?.macro;
+    const macroData = macro?.macro_data;
     const [selected, setSelected] = useState("us500");
     const selectedMeta = MARKETS.find(([key]) => key === selected) ?? MARKETS[0];
     const market = markets[selected] as MarketQuote | undefined;
-    const macro = data?.report?.macro;
-    const news = useMemo(() => (macro?.news ?? []).slice(0, 5), [macro?.news]);
+    const news = useMemo(() => (macro?.news ?? []).slice(0, 6), [macro?.news]);
+
+    const observations = macroData?.observations;
+    const macroRows = [
+        ["US CPI", "us_cpi", "US inflation"],
+        ["US unemployment", "us_unemployment", "Labour market"],
+        ["US payrolls", "us_payrolls", "Employment"],
+        ["US wages", "us_average_hourly_earnings", "Average hourly earnings"],
+        ["UK CPIH", "uk_cpih", "UK inflation"],
+        ["Fed funds", "fed_funds", "Policy rate"],
+        ["US 2Y", "us_2y", "Front-end yield"],
+        ["US 10Y", "us_10y", "Long-end yield"],
+        ["VIX", "vix", "Risk sentiment"],
+    ] as const;
 
     return (
         <PalPageShell page="macro-view" onPageChange={onPageChange}>
@@ -59,25 +90,29 @@ export default function MacroView({ onPageChange }: Props) {
                             <div><p className="text-xs uppercase tracking-widest text-zinc-600">Current value</p><p className="mt-2 text-4xl font-semibold tabular-nums">{quoteText(market)}</p></div>
                             <p className={`text-lg font-semibold ${market?.change_percent == null ? "text-zinc-500" : market.change_percent >= 0 ? "text-emerald-300" : "text-red-300"}`}>{pctText(market)}</p>
                         </div>
-                        <div className="mt-7 flex min-h-48 items-center justify-center rounded-xl border border-zinc-900 bg-zinc-900/40 p-6">
-                            <div className="text-center"><p className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-600">Historical series</p><p className="mt-2 text-sm text-zinc-400">Waiting for OHLC/history from the online market provider.</p><p className="mt-2 text-xs text-zinc-600">PAL will not draw fabricated price history.</p></div>
+                        <div className="mt-7 rounded-xl border border-zinc-900 bg-zinc-900/40 p-5">
+                            <div className="flex items-center justify-between"><p className="text-xs font-semibold uppercase tracking-widest text-cyan-300/70">Macro evidence</p><span className="text-[10px] uppercase tracking-widest text-zinc-600">Official/public sources</span></div>
+                            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                                {macroRows.map(([label, key, subtitle]) => {
+                                    const current = latest(observations, key);
+                                    const delta = observationChange(observations, key);
+                                    return <div key={key} className="rounded-xl border border-zinc-900 bg-zinc-950/70 p-4"><p className="text-[10px] uppercase tracking-widest text-zinc-600">{label}</p><p className="mt-1 text-lg font-semibold tabular-nums">{current ? current.value.toLocaleString(undefined, { maximumFractionDigits: 3 }) : "Unavailable"}</p><p className="mt-1 text-xs text-zinc-600">{subtitle}{delta == null ? "" : ` · ${delta >= 0 ? "+" : ""}${delta.toFixed(2)}% vs prior observation`}</p></div>;
+                                })}
+                            </div>
                         </div>
-                        <div className="mt-4 flex items-center justify-between text-xs text-zinc-600"><span>Provider status</span><span>{market?.status ?? "UNAVAILABLE"}</span></div>
+                        <div className="mt-4 flex items-center justify-between text-xs text-zinc-600"><span>Market provider</span><span>{market?.source ?? "UNAVAILABLE"} · {market?.status ?? "UNAVAILABLE"}</span></div>
                     </div>
 
                     <div className="space-y-4">
-                        <div className="rounded-2xl border border-cyan-400/10 bg-cyan-400/5 p-5"><p className="text-xs font-semibold uppercase tracking-widest text-cyan-300/70">AI overview</p><p className="mt-3 text-sm leading-6 text-zinc-300">{macro?.summary || "Macro summary is waiting for the PAL feed."}</p></div>
-                        <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5"><p className="text-xs uppercase tracking-widest text-zinc-600">Market policy</p><p className="mt-2 text-xl font-semibold">{macro?.gbpusd?.bias ?? "NEUTRAL"}</p><p className="mt-2 text-sm leading-6 text-zinc-500">{macro?.main_risk || "No additional macro risk supplied."}</p></div>
+                        <div className="rounded-2xl border border-cyan-400/10 bg-cyan-400/5 p-5"><p className="text-xs font-semibold uppercase tracking-widest text-cyan-300/70">PAL overview</p><p className="mt-3 text-sm leading-6 text-zinc-300">{macro?.summary || "Macro summary is waiting for the PAL feed."}</p></div>
+                        <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5"><p className="text-xs uppercase tracking-widest text-zinc-600">Directional evidence</p><p className="mt-2 text-xl font-semibold">{macro?.gbpusd?.bias ?? "NEUTRAL"}</p><p className="mt-2 text-sm leading-6 text-zinc-500">{macro?.gbpusd?.reasons?.slice(0, 3).join(" ") || "No sufficient directional evidence supplied."}</p></div>
+                        <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5"><p className="text-xs uppercase tracking-widest text-zinc-600">Data sources</p><div className="mt-3 flex flex-wrap gap-2">{Object.entries(macroData?.source_status ?? {}).map(([source, status]) => <span key={source} className="rounded-full border border-zinc-800 px-2.5 py-1 text-[10px] uppercase tracking-wider text-zinc-500">{source}: {status}</span>)}</div>{!macroData && <p className="mt-3 text-sm text-zinc-600">No macro observation snapshot supplied.</p>}</div>
                     </div>
                 </section>
 
-                <section className="mt-4 grid gap-4 md:grid-cols-3">
-                    <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5"><p className="text-xs uppercase tracking-widest text-zinc-600">Flow</p><p className="mt-3 text-xl font-semibold">{market?.status ?? "UNAVAILABLE"}</p><p className="mt-2 text-sm text-zinc-500">Provider freshness state.</p></div>
-                    <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5"><p className="text-xs uppercase tracking-widest text-zinc-600">Bearing</p><p className="mt-3 text-xl font-semibold">{market?.change_percent == null ? "UNKNOWN" : market.change_percent >= 0 ? "UP" : "DOWN"}</p><p className="mt-2 text-sm text-zinc-500">Derived directly from the supplied market change.</p></div>
-                    <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5"><p className="text-xs uppercase tracking-widest text-zinc-600">Pulse</p><p className="mt-3 text-xl font-semibold">{error ? "DEGRADED" : "CONNECTED"}</p><p className="mt-2 text-sm text-zinc-500">Backend feed health, not a trading signal.</p></div>
-                </section>
-
                 <section className="mt-6 rounded-2xl border border-zinc-800 bg-zinc-950 p-5"><div className="flex items-center justify-between"><h2 className="text-lg font-semibold">Recent catalysts</h2><span className="text-xs uppercase tracking-widest text-zinc-600">Curated</span></div><div className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-3">{news.map((item, index) => <div key={index} className="rounded-xl border border-zinc-900 bg-zinc-900/40 p-4 text-sm leading-5 text-zinc-400">{String((item as any).title ?? (item as any).headline ?? "Macro headline")}</div>)}{!news.length && <p className="text-sm text-zinc-600">No macro headlines currently supplied.</p>}</div></section>
+
+                {error && <p className="mt-4 text-xs text-amber-300/70">PAL feed is degraded. Missing external data is shown as unavailable rather than fabricated.</p>}
             </div>
         </PalPageShell>
     );
