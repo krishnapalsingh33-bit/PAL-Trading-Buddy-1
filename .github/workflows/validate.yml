@@ -1,0 +1,40 @@
+name: Validate PAL Trading Buddy
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [online-market-data]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install backend dependencies
+        run: pip install -r requirements.txt
+      - name: Compile backend
+        working-directory: backend
+        run: python -m compileall -q .
+      - name: Run online market-data tests
+        working-directory: backend
+        run: python -m unittest discover -s tests -p 'test_online_market_data_provider.py' -v
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: TypeScript check
+        working-directory: frontend
+        run: npx tsc -b
