@@ -10,10 +10,91 @@ body,
 }
 
 body {
-    background: #09090b;
+    background: #050807;
     color: white;
-    font-family:
-        Inter,
-        system-ui,
-        sans-serif;
+    font-family: Inter, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+}
+
+/* PAL premium dashboard atmosphere */
+body:has([class*="max-w-[1500px]"]) {
+    background:
+        radial-gradient(circle at 52% -8%, rgba(16, 185, 129, 0.10), transparent 34rem),
+        radial-gradient(circle at 94% 32%, rgba(34, 211, 238, 0.055), transparent 28rem),
+        radial-gradient(circle at 4% 92%, rgba(99, 102, 241, 0.045), transparent 28rem),
+        #050807;
+}
+
+body:has([class*="max-w-[1500px]"]) #root::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0.28;
+    background-image:
+        linear-gradient(rgba(255,255,255,0.018) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.018) 1px, transparent 1px);
+    background-size: 44px 44px;
+    mask-image: linear-gradient(to bottom, black, transparent 82%);
+    -webkit-mask-image: linear-gradient(to bottom, black, transparent 82%);
+    animation: pal-grid-drift 18s linear infinite;
+}
+
+body:has([class*="max-w-[1500px]"]) [class*="rounded-2xl"] {
+    transition:
+        transform 280ms cubic-bezier(.22,1,.36,1),
+        border-color 280ms ease,
+        box-shadow 280ms ease,
+        background-color 280ms ease;
+}
+
+body:has([class*="max-w-[1500px]"]) [class*="rounded-2xl"]:hover {
+    border-color: rgba(110, 231, 183, 0.16);
+    box-shadow:
+        0 24px 70px -42px rgba(0,0,0,.95),
+        0 0 38px -28px rgba(52,211,153,.35);
+}
+
+body:has([class*="max-w-[1500px]"]) button,
+body:has([class*="max-w-[1500px]"]) [role="button"] {
+    transition:
+        transform 180ms ease,
+        filter 180ms ease,
+        border-color 180ms ease,
+        box-shadow 180ms ease;
+}
+
+body:has([class*="max-w-[1500px]"]) button:hover,
+body:has([class*="max-w-[1500px]"]) [role="button"]:hover {
+    filter: brightness(1.08);
+}
+
+body:has([class*="max-w-[1500px]"]) button:active,
+body:has([class*="max-w-[1500px]"]) [role="button"]:active {
+    transform: scale(.985);
+}
+
+body:has([class*="max-w-[1500px]"]) [class*="bg-emerald-500"] {
+    box-shadow: 0 0 30px -18px rgba(16,185,129,.7);
+}
+
+@keyframes pal-grid-drift {
+    from { transform: translate3d(0,0,0); }
+    to { transform: translate3d(44px,44px,0); }
+}
+
+@keyframes pal-float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-5px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
 }
