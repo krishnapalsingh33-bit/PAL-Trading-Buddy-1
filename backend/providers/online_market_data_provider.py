@@ -16,7 +16,10 @@ logger = logging.getLogger(__name__)
 class YahooMarketDataProvider(MarketDataProvider):
     """Online snapshot provider isolated behind MarketDataProvider."""
 
-    BASE_URL = "https://query1.finance.yahoo.com/v8/finance/chart"
+    BASE_URLS = (
+        "https://query1.finance.yahoo.com/v8/finance/chart",
+        "https://query2.finance.yahoo.com/v8/finance/chart",
+    )
     SOURCE = "Yahoo Finance"
 
     SYMBOL_MAP = {
@@ -47,8 +50,15 @@ class YahooMarketDataProvider(MarketDataProvider):
         self.session = session or requests.Session()
         self.session.headers.update(
             {
-                "User-Agent": "PAL-Trading-Buddy/2.1 (cloud market intelligence)",
-                "Accept": "application/json",
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/151.0.0.0 Safari/537.36"
+                ),
+                "Accept": "application/json,text/plain,*/*",
+                "Accept-Language": "en-US,en;q=0.9",
+                "Referer": "https://finance.yahoo.com/",
+                "Connection": "keep-alive",
             }
         )
 
@@ -71,10 +81,7 @@ class YahooMarketDataProvider(MarketDataProvider):
         try:
             if value is None:
                 return None
-            return datetime.fromtimestamp(
-                int(value),
-                tz=timezone.utc,
-            ).isoformat()
+            return datetime.fromtimestamp(int(value), tz=timezone.utc).isoformat()
         except (TypeError, ValueError, OSError):
             return None
 
@@ -82,26 +89,46 @@ class YahooMarketDataProvider(MarketDataProvider):
     def _status(timestamp: str | None) -> str:
         if not timestamp:
             return "UNAVAILABLE"
-
         try:
             observed = datetime.fromisoformat(timestamp)
             age_seconds = max(
                 0,
-                int(
-                    (
-                        datetime.now(timezone.utc)
-                        - observed.astimezone(timezone.utc)
-                    ).total_seconds()
-                ),
+                int((datetime.now(timezone.utc) - observed.astimezone(timezone.utc)).total_seconds()),
             )
         except ValueError:
             return "UNAVAILABLE"
-
         if age_seconds <= 120:
             return "CURRENT"
         if age_seconds <= 86_400:
             return "RECENT"
         return "STALE"
+
+    def _request_chart(self, yahoo_symbol: str) -> dict[str, Any]:
+        last_error: Exception | None = None
+        for base_url in self.BASE_URLS:
+            try:
+                response = self.session.get(
+                    f"{base_url}/{yahoo_symbol}",
+                    params={
+                        "range": "5d",
+                        "interval": "1d",
+                        "events": "history",
+                        "includePrePost": "true",
+                        "lang": "en-US",
+                        "region": "US",
+                    },
+                    timeout=self.timeout_seconds,
+                )
+                response.raise_for_status()
+                payload = response.json()
+                chart = payload.get("chart", {})
+                if chart.get("error"):
+                    raise RuntimeError(chart["error"].get("description", "Yahoo Finance returned an error."))
+                return payload
+            except Exception as exc:
+                last_error = exc
+                logger.warning("Yahoo endpoint failed: %s (%s)", base_url, exc)
+        raise RuntimeError(f"All Yahoo market endpoints failed: {last_error}")
 
     def get_quote(self, symbol: str) -> MarketQuote:
         normalized = symbol.upper()
@@ -116,44 +143,15 @@ class YahooMarketDataProvider(MarketDataProvider):
             )
 
         try:
-            response = self.session.get(
-                f"{self.BASE_URL}/{yahoo_symbol}",
-                params={
-                    "range": "5d",
-                    "interval": "1d",
-                    "events": "history",
-                    "includePrePost": "true",
-                },
-                timeout=self.timeout_seconds,
-            )
-            response.raise_for_status()
-            payload = response.json()
-
-            chart = payload.get("chart", {})
-            if chart.get("error"):
-                raise RuntimeError(
-                    chart["error"].get(
-                        "description",
-                        "Yahoo Finance returned an error.",
-                    )
-                )
-
-            results = chart.get("result") or []
+            payload = self._request_chart(yahoo_symbol)
+            results = (payload.get("chart") or {}).get("result") or []
             if not results:
                 raise RuntimeError("Yahoo Finance returned no quote data.")
 
             result = results[0]
             meta = result.get("meta") or {}
-
-            price = self._number(
-                meta.get("regularMarketPrice")
-                or meta.get("postMarketPrice")
-                or meta.get("preMarketPrice")
-            )
-            previous = self._number(
-                meta.get("previousClose")
-                or meta.get("chartPreviousClose")
-            )
+            price = self._number(meta.get("regularMarketPrice") or meta.get("postMarketPrice") or meta.get("preMarketPrice"))
+            previous = self._number(meta.get("previousClose") or meta.get("chartPreviousClose"))
 
             timestamps = result.get("timestamp") or []
             quote_rows = (result.get("indicators") or {}).get("quote") or []
@@ -175,22 +173,9 @@ class YahooMarketDataProvider(MarketDataProvider):
                 raise RuntimeError("Yahoo Finance returned no current price.")
 
             change = price - previous if previous is not None else None
-            change_percent = (
-                (change / previous) * 100
-                if change is not None and previous not in (None, 0)
-                else None
-            )
-
-            market_time = self._timestamp(
-                meta.get("regularMarketTime")
-                or (timestamps[-1] if timestamps else None)
-            )
-
-            unit = (
-                "yield_percent"
-                if normalized in {"US10Y", "10Y", "TNX"}
-                else "price"
-            )
+            change_percent = (change / previous) * 100 if change is not None and previous not in (None, 0) else None
+            market_time = self._timestamp(meta.get("regularMarketTime") or (timestamps[-1] if timestamps else None))
+            unit = "yield_percent" if normalized in {"US10Y", "10Y", "TNX"} else "price"
 
             return MarketQuote(
                 symbol=normalized,
@@ -204,12 +189,7 @@ class YahooMarketDataProvider(MarketDataProvider):
                 unit=unit,
             )
         except Exception as exc:
-            logger.warning(
-                "Online market provider failed for %s (%s): %s",
-                normalized,
-                yahoo_symbol,
-                exc,
-            )
+            logger.warning("Online market provider failed for %s (%s): %s", normalized, yahoo_symbol, exc)
             return MarketQuote(
                 symbol=normalized,
                 source=self.SOURCE,
