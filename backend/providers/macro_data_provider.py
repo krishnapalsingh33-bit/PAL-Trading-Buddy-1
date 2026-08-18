@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import logging
 import os
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
+import time
 from datetime import datetime, timezone
 from typing import Any
 
@@ -37,13 +38,20 @@ class MacroDataProvider:
         "vix": "VIXCLS",
     }
 
-    def __init__(self, timeout_seconds: float = 5.0) -> None:
+    BLS_CACHE_TTL_SECONDS = 15 * 60
+    FAILED_SOURCE_CACHE_TTL_SECONDS = 60
+
+    _bls_cache: tuple[float, dict[str, list[dict[str, Any]]], str] | None = None
+    _bls_lock = threading.Lock()
+
+    def __init__(self, timeout_seconds: float = 8.0) -> None:
         self.timeout_seconds = timeout_seconds
         self.session = requests.Session()
         self.session.headers.update(
             {
                 "User-Agent": "PAL-Trading-Buddy/2.2 (macro intelligence)",
                 "Accept": "application/json",
+                "Content-Type": "application/json",
             }
         )
 
@@ -59,56 +67,78 @@ class MacroDataProvider:
         return snapshot
 
     def _load_bls(self, snapshot: dict[str, Any]) -> None:
-        reverse_map = {value: key for key, value in self.BLS_SERIES.items()}
-
-        def fetch_series(series_id: str) -> tuple[str, list[dict[str, Any]]]:
-            response = self.session.get(
-                f"{self.BLS_URL}{series_id}",
-                params={"latest": "true"},
-                timeout=self.timeout_seconds,
-            )
-            response.raise_for_status()
-            payload = response.json()
-            if payload.get("status") != "REQUEST_SUCCEEDED":
-                raise RuntimeError(f"BLS returned unsuccessful response for {series_id}.")
-            series = (payload.get("Results") or {}).get("series") or []
-            if not series:
-                return series_id, []
-            rows = []
-            for item in series[0].get("data") or []:
-                value = self._number(item.get("value"))
-                if value is None:
-                    continue
-                rows.append(
-                    {
-                        "period": item.get("periodName"),
-                        "year": item.get("year"),
-                        "value": value,
-                        "date": self._bls_date(item),
-                        "source": "U.S. Bureau of Labor Statistics",
-                    }
+        now = time.monotonic()
+        with self._bls_lock:
+            cached = self._bls_cache
+            if cached:
+                cached_at, observations, status = cached
+                ttl = (
+                    self.BLS_CACHE_TTL_SECONDS
+                    if status == "CURRENT"
+                    else self.FAILED_SOURCE_CACHE_TTL_SECONDS
                 )
-            return series_id, rows
+                if now - cached_at < ttl:
+                    snapshot["observations"].update(observations)
+                    snapshot["source_status"]["bls"] = status
+                    return
 
-        successful = 0
-        try:
-            with ThreadPoolExecutor(max_workers=len(self.BLS_SERIES)) as executor:
-                futures = [executor.submit(fetch_series, series_id) for series_id in self.BLS_SERIES.values()]
-                for future in as_completed(futures):
-                    try:
-                        series_id, rows = future.result()
-                    except Exception as exc:
-                        logger.warning("BLS series request failed: %s", exc)
+            try:
+                response = self.session.post(
+                    self.BLS_URL,
+                    json={
+                        "seriesid": list(self.BLS_SERIES.values()),
+                        "latest": "true",
+                    },
+                    timeout=self.timeout_seconds,
+                )
+                response.raise_for_status()
+                payload = response.json() or {}
+                if payload.get("status") != "REQUEST_SUCCEEDED":
+                    raise RuntimeError("BLS returned an unsuccessful response.")
+
+                reverse_map = {value: key for key, value in self.BLS_SERIES.items()}
+                observations: dict[str, list[dict[str, Any]]] = {}
+
+                results = payload.get("Results") or {}
+                series_list = results.get("series") or []
+                if not isinstance(series_list, list):
+                    series_list = []
+
+                for series in series_list:
+                    if not isinstance(series, dict):
                         continue
+                    series_id = series.get("seriesID")
                     key = reverse_map.get(series_id)
-                    if key and rows:
-                        snapshot["observations"][key] = rows
-                        successful += 1
+                    if not key:
+                        continue
 
-            snapshot["source_status"]["bls"] = "CURRENT" if successful else "UNAVAILABLE"
-        except Exception as exc:
-            logger.warning("BLS macro provider failed: %s", exc)
-            snapshot["source_status"]["bls"] = "UNAVAILABLE"
+                    rows: list[dict[str, Any]] = []
+                    for item in series.get("data") or []:
+                        if not isinstance(item, dict):
+                            continue
+                        value = self._number(item.get("value"))
+                        if value is None:
+                            continue
+                        rows.append(
+                            {
+                                "period": item.get("periodName"),
+                                "year": item.get("year"),
+                                "value": value,
+                                "date": self._bls_date(item),
+                                "source": "U.S. Bureau of Labor Statistics",
+                            }
+                        )
+                    if rows:
+                        observations[key] = rows
+
+                status = "CURRENT" if observations else "UNAVAILABLE"
+                self._bls_cache = (now, observations, status)
+                snapshot["observations"].update(observations)
+                snapshot["source_status"]["bls"] = status
+            except Exception as exc:
+                logger.warning("BLS macro provider unavailable: %s", exc)
+                self._bls_cache = (now, {}, "UNAVAILABLE")
+                snapshot["source_status"]["bls"] = "UNAVAILABLE"
 
     def _load_fred(self, snapshot: dict[str, Any]) -> None:
         api_key = os.getenv("FRED_API_KEY", "").strip()
