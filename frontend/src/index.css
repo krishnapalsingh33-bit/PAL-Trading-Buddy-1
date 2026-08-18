@@ -1,254 +1,248 @@
 @import "tailwindcss";
 
-html,
-body,
-#root {
-    width: 100%;
-    min-height: 100%;
-    margin: 0;
-    padding: 0;
-}
+html, body, #root { width:100%; min-height:100%; margin:0; padding:0; }
 
 body {
-    min-height: 100vh;
-    background: #030706;
-    color: #f5f7f6;
-    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    -webkit-font-smoothing: antialiased;
-    text-rendering: optimizeLegibility;
+  min-height:100vh;
+  background:#020504;
+  color:#f5f7f6;
+  font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  -webkit-font-smoothing:antialiased;
 }
 
-/* PAL — premium dark trading command center */
 #root {
-    min-height: 100vh;
-    position: relative;
-    isolation: isolate;
-    overflow-x: hidden;
-    background:
-        radial-gradient(900px 520px at 52% -12%, rgba(16,185,129,.14), transparent 66%),
-        radial-gradient(650px 520px at 100% 20%, rgba(34,211,238,.075), transparent 68%),
-        radial-gradient(650px 520px at 0% 78%, rgba(59,130,246,.045), transparent 70%),
-        linear-gradient(180deg,#030706 0%,#050908 48%,#030706 100%);
+  min-height:100vh;
+  isolation:isolate;
+  position:relative;
+  overflow-x:hidden;
+  background:
+    radial-gradient(900px 500px at 52% -10%,rgba(0,255,170,.16),transparent 62%),
+    radial-gradient(700px 600px at 100% 45%,rgba(0,210,255,.09),transparent 68%),
+    radial-gradient(650px 550px at 0% 85%,rgba(111,70,255,.07),transparent 70%),
+    #020504;
 }
 
-#root::before {
-    content: "";
-    position: fixed;
-    inset: 0;
-    z-index: -2;
-    pointer-events: none;
-    opacity: .38;
-    background-image:
-        linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px);
-    background-size: 52px 52px;
-    mask-image: linear-gradient(to bottom, black, transparent 86%);
-    -webkit-mask-image: linear-gradient(to bottom, black, transparent 86%);
-    animation: pal-grid-drift 22s linear infinite;
+#root:before {
+  content:"";
+  position:fixed;
+  inset:0;
+  z-index:-5;
+  pointer-events:none;
+  background-image:linear-gradient(rgba(255,255,255,.026) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.026) 1px,transparent 1px);
+  background-size:44px 44px;
+  mask-image:linear-gradient(to bottom,#000,transparent 92%);
+  animation:pal-grid 24s linear infinite;
 }
 
-#root::after {
-    content: "";
-    position: fixed;
-    z-index: -1;
-    top: -240px;
-    left: 50%;
-    width: 720px;
-    height: 720px;
-    transform: translateX(-50%);
-    pointer-events: none;
-    border-radius: 999px;
-    background: radial-gradient(circle, rgba(52,211,153,.085), transparent 68%);
-    filter: blur(32px);
-    animation: pal-breathe 8s ease-in-out infinite;
+#root:after {
+  content:"";
+  position:fixed;
+  z-index:-4;
+  top:-280px;
+  left:50%;
+  width:900px;
+  height:900px;
+  transform:translateX(-50%);
+  border-radius:50%;
+  pointer-events:none;
+  background:radial-gradient(circle,rgba(0,255,170,.10),rgba(0,220,255,.035) 32%,transparent 68%);
+  filter:blur(25px);
+  animation:pal-aura 9s ease-in-out infinite;
 }
 
-/* Preserve the existing layout/data while upgrading its visual language. */
+/* SIDEBAR: darker luxury rail */
+#root aside {
+  background:linear-gradient(180deg,rgba(3,8,7,.96),rgba(2,5,4,.99)) !important;
+  border-color:rgba(255,255,255,.075) !important;
+  box-shadow:14px 0 60px -45px rgba(0,255,170,.35),inset -1px 0 rgba(255,255,255,.025);
+}
+
+/* MAIN DASHBOARD STAGE */
 #root main {
-    position: relative;
+  position:relative;
+  background:linear-gradient(180deg,rgba(0,0,0,.08),transparent 30%);
 }
 
+#root main > div.mx-auto {
+  position:relative;
+  max-width:1640px !important;
+  padding-left:28px !important;
+  padding-right:28px !important;
+}
+
+/* The top command bar becomes the visual hero */
+#root main > div.mx-auto > div:first-child {
+  position:relative;
+  border:1px solid rgba(52,211,153,.24) !important;
+  border-radius:24px !important;
+  background:
+    radial-gradient(500px 180px at 18% 50%,rgba(52,211,153,.12),transparent 70%),
+    radial-gradient(500px 180px at 88% 40%,rgba(34,211,238,.09),transparent 70%),
+    linear-gradient(135deg,rgba(10,25,21,.94),rgba(4,11,10,.88) 52%,rgba(4,13,16,.94)) !important;
+  box-shadow:
+    0 35px 100px -55px rgba(0,255,170,.50),
+    0 0 0 1px rgba(255,255,255,.025) inset,
+    0 1px 0 rgba(255,255,255,.08) inset !important;
+  backdrop-filter:blur(24px);
+  -webkit-backdrop-filter:blur(24px);
+  overflow:hidden;
+  animation:pal-hero-in .65s cubic-bezier(.22,1,.36,1) both;
+}
+
+#root main > div.mx-auto > div:first-child:after {
+  content:"";
+  position:absolute;
+  left:-30%;
+  top:0;
+  width:22%;
+  height:100%;
+  pointer-events:none;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.075),transparent);
+  transform:skewX(-18deg);
+  animation:pal-sweep 7s ease-in-out infinite;
+}
+
+/* Hero brand mark */
+#root main > div.mx-auto > div:first-child .h-12.w-12 {
+  width:58px !important;
+  height:58px !important;
+  border-radius:18px !important;
+  border-color:rgba(52,211,153,.38) !important;
+  background:linear-gradient(145deg,rgba(52,211,153,.18),rgba(34,211,238,.055)) !important;
+  box-shadow:0 0 38px -8px rgba(52,211,153,.75),inset 0 1px rgba(255,255,255,.10) !important;
+}
+
+/* Stronger premium typography */
+#root main h1 {
+  letter-spacing:-.045em !important;
+}
+
+#root main h2,
+#root main .text-2xl,
+#root main .text-3xl,
+#root main .text-4xl {
+  letter-spacing:-.04em !important;
+  font-variant-numeric:tabular-nums;
+}
+
+/* Every dashboard panel gets real depth */
 #root main section {
-    border-color: rgba(255,255,255,.075) !important;
-    background:
-        linear-gradient(135deg, rgba(255,255,255,.055), rgba(255,255,255,.018) 48%, rgba(0,0,0,.16)),
-        rgba(5,10,9,.58) !important;
-    box-shadow:
-        0 28px 80px -52px rgba(0,0,0,.98),
-        inset 0 1px 0 rgba(255,255,255,.035),
-        inset 0 0 0 1px rgba(255,255,255,.012);
-    backdrop-filter: blur(18px);
-    -webkit-backdrop-filter: blur(18px);
+  position:relative;
+  border-color:rgba(255,255,255,.09) !important;
+  background:
+    linear-gradient(145deg,rgba(255,255,255,.052),rgba(255,255,255,.017) 42%,rgba(0,0,0,.20)),
+    rgba(4,10,9,.70) !important;
+  box-shadow:
+    0 28px 75px -52px rgba(0,0,0,1),
+    inset 0 1px 0 rgba(255,255,255,.045),
+    inset 0 0 0 1px rgba(52,211,153,.012) !important;
+  backdrop-filter:blur(20px);
+  -webkit-backdrop-filter:blur(20px);
+  transition:transform .28s cubic-bezier(.22,1,.36,1),border-color .28s ease,box-shadow .28s ease,background .28s ease;
 }
 
-#root main section::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    border-radius: inherit;
-    background: linear-gradient(115deg, rgba(52,211,153,.055), transparent 24%, transparent 72%, rgba(34,211,238,.035));
-    opacity: .7;
+#root main section:before {
+  content:"";
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  border-radius:inherit;
+  background:linear-gradient(120deg,rgba(52,211,153,.055),transparent 28%,transparent 68%,rgba(34,211,238,.045));
 }
 
 #root main section:hover {
-    border-color: rgba(52,211,153,.18) !important;
-    box-shadow:
-        0 34px 90px -52px rgba(0,0,0,1),
-        0 0 55px -38px rgba(16,185,129,.36),
-        inset 0 1px 0 rgba(255,255,255,.05);
+  transform:translateY(-3px);
+  border-color:rgba(52,211,153,.22) !important;
+  box-shadow:0 36px 90px -55px rgba(0,0,0,1),0 0 50px -35px rgba(52,211,153,.42),inset 0 1px rgba(255,255,255,.065) !important;
 }
 
-/* Dashboard cards get depth without becoming flashy. */
-#root main .group {
-    transition:
-        transform .28s cubic-bezier(.22,1,.36,1),
-        border-color .28s ease,
-        box-shadow .28s ease,
-        background-color .28s ease;
+/* Market snapshot cards: make them feel like live instruments */
+#root main section.group {
+  overflow:hidden;
 }
 
-#root main .group:hover {
-    transform: translateY(-3px);
+#root main section.group:after {
+  content:"";
+  position:absolute;
+  width:120px;
+  height:120px;
+  right:-55px;
+  top:-55px;
+  border-radius:50%;
+  background:radial-gradient(circle,rgba(52,211,153,.10),transparent 68%);
+  pointer-events:none;
 }
 
-#root main [class*="rounded-2xl"],
-#root main [class*="rounded-xl"] {
-    box-shadow:
-        0 18px 55px -45px rgba(0,0,0,.95),
-        inset 0 1px 0 rgba(255,255,255,.022);
-}
-
-#root main [class*="rounded-2xl"]:hover {
-    border-color: rgba(110,231,183,.15) !important;
-}
-
-/* Give numeric market data a terminal-grade appearance. */
-#root main .text-xl,
-#root main .text-2xl,
-#root main .text-3xl,
-#root main .text-4xl,
-#root main .text-5xl {
-    font-variant-numeric: tabular-nums;
-    letter-spacing: -.035em;
-}
-
-/* Interactive controls */
+/* Buttons and controls */
 #root button,
 #root [role="button"] {
-    position: relative;
-    transition:
-        transform .16s ease,
-        filter .16s ease,
-        border-color .2s ease,
-        box-shadow .2s ease,
-        background-color .2s ease;
-}
-
-#root button::after,
-#root [role="button"]::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    transform: translateX(-125%);
-    background: linear-gradient(105deg, transparent 35%, rgba(255,255,255,.075) 50%, transparent 65%);
-    transition: transform .55s ease;
-}
-
-#root button:hover::after,
-#root [role="button"]:hover::after {
-    transform: translateX(125%);
+  overflow:hidden;
+  transition:transform .18s ease,filter .18s ease,box-shadow .22s ease,border-color .22s ease !important;
 }
 
 #root button:hover,
 #root [role="button"]:hover {
-    filter: brightness(1.08);
-    box-shadow: 0 12px 34px -22px rgba(52,211,153,.55);
+  transform:translateY(-1px);
+  filter:brightness(1.10);
+  box-shadow:0 12px 34px -22px rgba(52,211,153,.70);
 }
 
 #root button:active,
-#root [role="button"]:active {
-    transform: scale(.985);
+#root [role="button"]:active { transform:scale(.985); }
+
+/* Data bars */
+#root main .h-1 > div,
+#root main .h-1.5 > div {
+  box-shadow:0 0 14px rgba(52,211,153,.30);
 }
 
+/* Make the command/status row feel like a ticker */
+#root main > div.mx-auto > div:first-child .border-t {
+  background:linear-gradient(90deg,rgba(52,211,153,.025),rgba(34,211,238,.045),rgba(52,211,153,.025)) !important;
+}
+
+/* Inputs/selects */
 #root select,
 #root input {
-    background-color: rgba(4,9,8,.82) !important;
-    border-color: rgba(255,255,255,.09) !important;
-    color: #e8efec !important;
-    outline: none;
+  color:#ecfdf5 !important;
+  background:rgba(2,7,6,.84) !important;
+  border-color:rgba(255,255,255,.10) !important;
 }
-
 #root select:focus,
 #root input:focus {
-    border-color: rgba(52,211,153,.42) !important;
-    box-shadow: 0 0 0 3px rgba(52,211,153,.07), 0 0 28px -16px rgba(52,211,153,.75);
+  border-color:rgba(52,211,153,.45) !important;
+  box-shadow:0 0 0 3px rgba(52,211,153,.07),0 0 28px -16px rgba(52,211,153,.8) !important;
 }
 
-/* Semantic market glow */
-#root .text-emerald-300,
-#root .text-emerald-400 {
-    text-shadow: 0 0 18px rgba(52,211,153,.2);
+/* Premium scrollbar */
+#root ::-webkit-scrollbar { width:7px; height:7px; }
+#root ::-webkit-scrollbar-track { background:rgba(255,255,255,.015); }
+#root ::-webkit-scrollbar-thumb { background:linear-gradient(180deg,rgba(52,211,153,.48),rgba(34,211,238,.24)); border-radius:99px; }
+#root ::-webkit-scrollbar-thumb:hover { background:rgba(52,211,153,.70); }
+
+/* Keep the interface responsive */
+@media (max-width:1024px) {
+  #root main > div.mx-auto { padding-left:16px !important; padding-right:16px !important; }
 }
 
-#root .text-cyan-300,
-#root .text-cyan-400 {
-    text-shadow: 0 0 18px rgba(103,232,249,.17);
+@media (prefers-reduced-motion:reduce) {
+  *,*:before,*:after { animation:none !important; transition:none !important; scroll-behavior:auto !important; }
 }
 
-#root .text-red-300,
-#root .text-red-400 {
-    text-shadow: 0 0 18px rgba(248,113,113,.13);
+@keyframes pal-grid {
+  from { transform:translate3d(0,0,0); }
+  to { transform:translate3d(44px,44px,0); }
 }
-
-/* Thin professional scrollbar */
-#root ::-webkit-scrollbar {
-    width: 7px;
-    height: 7px;
+@keyframes pal-aura {
+  0%,100% { opacity:.45; transform:translateX(-50%) scale(.92); }
+  50% { opacity:.95; transform:translateX(-50%) scale(1.08); }
 }
-
-#root ::-webkit-scrollbar-track {
-    background: rgba(255,255,255,.015);
+@keyframes pal-sweep {
+  0%,55% { transform:translateX(0) skewX(-18deg); opacity:0; }
+  65% { opacity:1; }
+  82%,100% { transform:translateX(620%) skewX(-18deg); opacity:0; }
 }
-
-#root ::-webkit-scrollbar-thumb {
-    border-radius: 999px;
-    background: linear-gradient(180deg, rgba(52,211,153,.34), rgba(34,211,238,.18));
-}
-
-#root ::-webkit-scrollbar-thumb:hover {
-    background: rgba(52,211,153,.52);
-}
-
-/* Loading state */
-#root .animate-pulse > div,
-#root .animate-pulse > div > div {
-    background: linear-gradient(105deg, rgba(255,255,255,.022), rgba(52,211,153,.06), rgba(255,255,255,.022)) !important;
-    background-size: 220% 100% !important;
-    animation: pal-shimmer 1.65s ease-in-out infinite;
-}
-
-@keyframes pal-grid-drift {
-    from { transform: translate3d(0,0,0); }
-    to { transform: translate3d(52px,52px,0); }
-}
-
-@keyframes pal-breathe {
-    0%,100% { opacity: .48; transform: translateX(-50%) scale(.92); }
-    50% { opacity: .9; transform: translateX(-50%) scale(1.08); }
-}
-
-@keyframes pal-shimmer {
-    0% { background-position: 120% 0; }
-    100% { background-position: -120% 0; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-    *,*::before,*::after {
-        animation-duration: .01ms !important;
-        animation-iteration-count: 1 !important;
-        transition-duration: .01ms !important;
-        scroll-behavior: auto !important;
-    }
+@keyframes pal-hero-in {
+  from { opacity:0; transform:translateY(12px) scale(.992); }
+  to { opacity:1; transform:translateY(0) scale(1); }
 }
