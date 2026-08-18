@@ -156,7 +156,7 @@ class MacroDataProvider:
             snapshot["source_status"]["ons"] = status
 
     def _fetch_ons_cpih(self) -> list[dict[str, Any]]:
-        """Fetch the latest CPIH months from the latest published ONS version."""
+        """Fetch the latest CPIH months with one documented wildcard observation call."""
         dataset = self.session.get(self.ONS_DATASET_URL, timeout=self.timeout_seconds)
         dataset.raise_for_status()
         dataset_body = dataset.json() or {}
@@ -164,68 +164,81 @@ class MacroDataProvider:
         latest_href = latest.get("href") if isinstance(latest, dict) else None
         if not latest_href:
             raise RuntimeError("ONS CPIH dataset did not expose a latest_version link.")
-
         match = re.search(r"/versions/(\d+)$", latest_href.rstrip("/"))
         if not match:
             raise RuntimeError(f"Unable to determine ONS CPIH version from {latest_href!r}.")
-        version = match.group(1)
+        version = int(match.group(1))
 
-        options_url = f"{latest_href.rstrip('/')}/dimensions/time/options"
-        response = self.session.get(options_url, params={"limit": 1000}, timeout=self.timeout_seconds)
+        observation_url = f"{latest_href.rstrip('/')}/observations"
+        response = self.session.get(
+            observation_url,
+            params={
+                "time": "*",
+                "geography": "K02000001",
+                "aggregate": "cpih1dim1A0",
+                "limit": 1000,
+            },
+            timeout=self.timeout_seconds,
+        )
         response.raise_for_status()
         body = response.json() or {}
-        options = body.get("items") or []
-        dated_options: list[tuple[datetime, str]] = []
-        current_year = datetime.now(timezone.utc).year
-        for item in options:
-            label = item.get("label") or item.get("option")
-            if not isinstance(label, str):
+        raw = body.get("observations") or []
+        rows: list[dict[str, Any]] = []
+
+        for item in raw if isinstance(raw, list) else []:
+            if not isinstance(item, dict):
                 continue
-            label = label.strip()
-            match = re.fullmatch(r"([A-Za-z]{3})-(\d{2})", label)
-            if not match:
+            value = self._number(item.get("observation"))
+            if value is None:
+                continue
+            label = self._extract_ons_time(item)
+            if not label:
                 continue
             try:
-                two_digit_year = int(match.group(2))
-                century = 2000 if two_digit_year <= (current_year % 100 + 1) else 1900
-                parsed = datetime.strptime(f"{match.group(1)}-{century + two_digit_year}", "%b-%Y")
-                dated_options.append((parsed, label))
+                sort_key = self._ons_month_key(label)
             except ValueError:
-                continue
-
-        if not dated_options:
-            raise RuntimeError(f"ONS CPIH version {version} returned no usable time options.")
-
-        latest_labels = [label for _, label in sorted(dated_options)[-24:]]
-        observation_url = f"{latest_href.rstrip('/')}/observations"
-        rows: list[dict[str, Any]] = []
-        for label in latest_labels:
-            response = self.session.get(
-                observation_url,
-                params={
-                    "time": label,
-                    "geography": "K02000001",
-                    "aggregate": "cpih1dim1A0",
-                },
-                timeout=self.timeout_seconds,
-            )
-            response.raise_for_status()
-            observations = (response.json() or {}).get("observations") or []
-            if not observations:
-                continue
-            value = self._number(observations[0].get("observation"))
-            if value is None:
                 continue
             rows.append({
                 "date": label,
                 "value": value,
                 "source": "UK Office for National Statistics",
                 "dataset": "CPIH",
-                "version": int(version),
+                "version": version,
+                "_sort": sort_key,
             })
 
-        rows.sort(key=lambda row: self._ons_month_key(row["date"]))
+        rows.sort(key=lambda row: row["_sort"])
+        rows = rows[-24:]
+        for row in rows:
+            row.pop("_sort", None)
         return rows
+
+    @staticmethod
+    def _extract_ons_time(item: dict[str, Any]) -> str | None:
+        dimensions = item.get("dimensions") or []
+        if isinstance(dimensions, dict):
+            candidates = [dimensions.get("time"), dimensions.get("Time")]
+            for candidate in candidates:
+                if isinstance(candidate, str):
+                    return candidate
+                if isinstance(candidate, dict):
+                    value = candidate.get("option") or candidate.get("id") or candidate.get("label")
+                    if isinstance(value, str) and re.fullmatch(r"[A-Za-z]{3}-\d{2}", value):
+                        return value
+        if isinstance(dimensions, list):
+            for dimension in dimensions:
+                if not isinstance(dimension, dict):
+                    continue
+                name = str(dimension.get("id") or dimension.get("name") or "").lower()
+                if name == "time":
+                    value = dimension.get("option") or dimension.get("id") or dimension.get("label")
+                    if isinstance(value, str) and re.fullmatch(r"[A-Za-z]{3}-\d{2}", value):
+                        return value
+        for key in ("time", "date", "period"):
+            value = item.get(key)
+            if isinstance(value, str) and re.fullmatch(r"[A-Za-z]{3}-\d{2}", value):
+                return value
+        return None
 
     @staticmethod
     def _ons_month_key(label: str) -> datetime:
