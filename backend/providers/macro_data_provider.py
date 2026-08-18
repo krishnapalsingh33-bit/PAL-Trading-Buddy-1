@@ -156,7 +156,7 @@ class MacroDataProvider:
             snapshot["source_status"]["ons"] = status
 
     def _fetch_ons_cpih(self) -> list[dict[str, Any]]:
-        """Fetch the latest CPIH months with one documented wildcard observation call."""
+        """Fetch the latest CPIH months with the documented wildcard observation call."""
         dataset = self.session.get(self.ONS_DATASET_URL, timeout=self.timeout_seconds)
         dataset.raise_for_status()
         dataset_body = dataset.json() or {}
@@ -176,7 +176,6 @@ class MacroDataProvider:
                 "time": "*",
                 "geography": "K02000001",
                 "aggregate": "cpih1dim1A0",
-                "limit": 1000,
             },
             timeout=self.timeout_seconds,
         )
@@ -217,14 +216,13 @@ class MacroDataProvider:
     def _extract_ons_time(item: dict[str, Any]) -> str | None:
         dimensions = item.get("dimensions") or []
         if isinstance(dimensions, dict):
-            candidates = [dimensions.get("time"), dimensions.get("Time")]
-            for candidate in candidates:
-                if isinstance(candidate, str):
-                    return candidate
-                if isinstance(candidate, dict):
-                    value = candidate.get("option") or candidate.get("id") or candidate.get("label")
-                    if isinstance(value, str) and re.fullmatch(r"[A-Za-z]{3}-\d{2}", value):
-                        return value
+            candidate = dimensions.get("time") or dimensions.get("Time")
+            if isinstance(candidate, str) and re.fullmatch(r"[A-Za-z]{3}-\d{2}", candidate):
+                return candidate
+            if isinstance(candidate, dict):
+                value = candidate.get("option") or candidate.get("id") or candidate.get("label")
+                if isinstance(value, str) and re.fullmatch(r"[A-Za-z]{3}-\d{2}", value):
+                    return value
         if isinstance(dimensions, list):
             for dimension in dimensions:
                 if not isinstance(dimension, dict):
