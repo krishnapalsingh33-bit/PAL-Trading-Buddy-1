@@ -4,16 +4,251 @@ html,
 body,
 #root {
     width: 100%;
-    height: 100%;
+    min-height: 100%;
     margin: 0;
     padding: 0;
 }
 
 body {
-    background: #09090b;
-    color: white;
-    font-family:
-        Inter,
-        system-ui,
-        sans-serif;
+    min-height: 100vh;
+    background: #030706;
+    color: #f5f7f6;
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+}
+
+/* PAL — premium dark trading command center */
+#root {
+    min-height: 100vh;
+    position: relative;
+    isolation: isolate;
+    overflow-x: hidden;
+    background:
+        radial-gradient(900px 520px at 52% -12%, rgba(16,185,129,.14), transparent 66%),
+        radial-gradient(650px 520px at 100% 20%, rgba(34,211,238,.075), transparent 68%),
+        radial-gradient(650px 520px at 0% 78%, rgba(59,130,246,.045), transparent 70%),
+        linear-gradient(180deg,#030706 0%,#050908 48%,#030706 100%);
+}
+
+#root::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -2;
+    pointer-events: none;
+    opacity: .38;
+    background-image:
+        linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px);
+    background-size: 52px 52px;
+    mask-image: linear-gradient(to bottom, black, transparent 86%);
+    -webkit-mask-image: linear-gradient(to bottom, black, transparent 86%);
+    animation: pal-grid-drift 22s linear infinite;
+}
+
+#root::after {
+    content: "";
+    position: fixed;
+    z-index: -1;
+    top: -240px;
+    left: 50%;
+    width: 720px;
+    height: 720px;
+    transform: translateX(-50%);
+    pointer-events: none;
+    border-radius: 999px;
+    background: radial-gradient(circle, rgba(52,211,153,.085), transparent 68%);
+    filter: blur(32px);
+    animation: pal-breathe 8s ease-in-out infinite;
+}
+
+/* Preserve the existing layout/data while upgrading its visual language. */
+#root main {
+    position: relative;
+}
+
+#root main section {
+    border-color: rgba(255,255,255,.075) !important;
+    background:
+        linear-gradient(135deg, rgba(255,255,255,.055), rgba(255,255,255,.018) 48%, rgba(0,0,0,.16)),
+        rgba(5,10,9,.58) !important;
+    box-shadow:
+        0 28px 80px -52px rgba(0,0,0,.98),
+        inset 0 1px 0 rgba(255,255,255,.035),
+        inset 0 0 0 1px rgba(255,255,255,.012);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+}
+
+#root main section::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    border-radius: inherit;
+    background: linear-gradient(115deg, rgba(52,211,153,.055), transparent 24%, transparent 72%, rgba(34,211,238,.035));
+    opacity: .7;
+}
+
+#root main section:hover {
+    border-color: rgba(52,211,153,.18) !important;
+    box-shadow:
+        0 34px 90px -52px rgba(0,0,0,1),
+        0 0 55px -38px rgba(16,185,129,.36),
+        inset 0 1px 0 rgba(255,255,255,.05);
+}
+
+/* Dashboard cards get depth without becoming flashy. */
+#root main .group {
+    transition:
+        transform .28s cubic-bezier(.22,1,.36,1),
+        border-color .28s ease,
+        box-shadow .28s ease,
+        background-color .28s ease;
+}
+
+#root main .group:hover {
+    transform: translateY(-3px);
+}
+
+#root main [class*="rounded-2xl"],
+#root main [class*="rounded-xl"] {
+    box-shadow:
+        0 18px 55px -45px rgba(0,0,0,.95),
+        inset 0 1px 0 rgba(255,255,255,.022);
+}
+
+#root main [class*="rounded-2xl"]:hover {
+    border-color: rgba(110,231,183,.15) !important;
+}
+
+/* Give numeric market data a terminal-grade appearance. */
+#root main .text-xl,
+#root main .text-2xl,
+#root main .text-3xl,
+#root main .text-4xl,
+#root main .text-5xl {
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -.035em;
+}
+
+/* Interactive controls */
+#root button,
+#root [role="button"] {
+    position: relative;
+    transition:
+        transform .16s ease,
+        filter .16s ease,
+        border-color .2s ease,
+        box-shadow .2s ease,
+        background-color .2s ease;
+}
+
+#root button::after,
+#root [role="button"]::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    transform: translateX(-125%);
+    background: linear-gradient(105deg, transparent 35%, rgba(255,255,255,.075) 50%, transparent 65%);
+    transition: transform .55s ease;
+}
+
+#root button:hover::after,
+#root [role="button"]:hover::after {
+    transform: translateX(125%);
+}
+
+#root button:hover,
+#root [role="button"]:hover {
+    filter: brightness(1.08);
+    box-shadow: 0 12px 34px -22px rgba(52,211,153,.55);
+}
+
+#root button:active,
+#root [role="button"]:active {
+    transform: scale(.985);
+}
+
+#root select,
+#root input {
+    background-color: rgba(4,9,8,.82) !important;
+    border-color: rgba(255,255,255,.09) !important;
+    color: #e8efec !important;
+    outline: none;
+}
+
+#root select:focus,
+#root input:focus {
+    border-color: rgba(52,211,153,.42) !important;
+    box-shadow: 0 0 0 3px rgba(52,211,153,.07), 0 0 28px -16px rgba(52,211,153,.75);
+}
+
+/* Semantic market glow */
+#root .text-emerald-300,
+#root .text-emerald-400 {
+    text-shadow: 0 0 18px rgba(52,211,153,.2);
+}
+
+#root .text-cyan-300,
+#root .text-cyan-400 {
+    text-shadow: 0 0 18px rgba(103,232,249,.17);
+}
+
+#root .text-red-300,
+#root .text-red-400 {
+    text-shadow: 0 0 18px rgba(248,113,113,.13);
+}
+
+/* Thin professional scrollbar */
+#root ::-webkit-scrollbar {
+    width: 7px;
+    height: 7px;
+}
+
+#root ::-webkit-scrollbar-track {
+    background: rgba(255,255,255,.015);
+}
+
+#root ::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: linear-gradient(180deg, rgba(52,211,153,.34), rgba(34,211,238,.18));
+}
+
+#root ::-webkit-scrollbar-thumb:hover {
+    background: rgba(52,211,153,.52);
+}
+
+/* Loading state */
+#root .animate-pulse > div,
+#root .animate-pulse > div > div {
+    background: linear-gradient(105deg, rgba(255,255,255,.022), rgba(52,211,153,.06), rgba(255,255,255,.022)) !important;
+    background-size: 220% 100% !important;
+    animation: pal-shimmer 1.65s ease-in-out infinite;
+}
+
+@keyframes pal-grid-drift {
+    from { transform: translate3d(0,0,0); }
+    to { transform: translate3d(52px,52px,0); }
+}
+
+@keyframes pal-breathe {
+    0%,100% { opacity: .48; transform: translateX(-50%) scale(.92); }
+    50% { opacity: .9; transform: translateX(-50%) scale(1.08); }
+}
+
+@keyframes pal-shimmer {
+    0% { background-position: 120% 0; }
+    100% { background-position: -120% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,*::before,*::after {
+        animation-duration: .01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: .01ms !important;
+        scroll-behavior: auto !important;
+    }
 }
