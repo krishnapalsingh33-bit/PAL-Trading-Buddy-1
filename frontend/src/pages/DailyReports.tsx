@@ -4,116 +4,75 @@ import type { Page } from "../components/layout/Sidebar";
 import { usePAL } from "../hooks/usePAL";
 
 type Props = { onPageChange: (page: Page) => void };
+type ArchiveItem = Record<string, any>;
 
 function text(value: unknown, fallback = "—") {
     return value == null || !String(value).trim() ? fallback : String(value);
 }
-
-function reportDate() {
-    return new Intl.DateTimeFormat(undefined, { weekday: "short", day: "2-digit", month: "short", year: "numeric" }).format(new Date());
+function reportDate() { return new Intl.DateTimeFormat(undefined, { weekday: "short", day: "2-digit", month: "short", year: "numeric" }).format(new Date()); }
+function reportTime() { return new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" }).format(new Date()); }
+function haystack(item: ArchiveItem) { return Object.values(item).filter((v) => typeof v === "string" || typeof v === "number").join(" ").toLowerCase(); }
+function themeOf(item: ArchiveItem) {
+    const s = haystack(item);
+    if (/yield|rate|bond|treasury|inflation|cpi|pce|fomc|fed/.test(s)) return "Yields";
+    if (/equity|stock|nasdaq|s&p|dow|risk-on|risk off/.test(s)) return "Equities";
+    if (/eur|euro|ecb/.test(s)) return "EUR";
+    if (/jpy|yen|boj/.test(s)) return "JPY";
+    return "USD";
 }
-
-function reportTime() {
-    return new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" }).format(new Date());
+function regimeOf(item: ArchiveItem) {
+    const s = haystack(item);
+    if (/bull|risk-on|hawkish|strong|rally/.test(s)) return "Risk-on";
+    if (/bear|risk-off|dovish|weak|sell|pressure/.test(s)) return "Risk-off";
+    return "Mixed";
 }
+function typeOf(item: ArchiveItem) { return /weekly|week/.test(haystack(item)) ? "Weekly" : "Daily Brief"; }
 
 export default function DailyReports({ onPageChange }: Props) {
-    const { data, error } = usePAL();
+    const { data } = usePAL();
     const macro = data?.report?.macro;
     const [read, setRead] = useState(false);
+    const [typeFilter, setTypeFilter] = useState("ALL");
+    const [themeFilter, setThemeFilter] = useState("ALL");
+    const [regimeFilter, setRegimeFilter] = useState("ALL");
 
-    const keyPoints = useMemo(() => [
-        ...(macro?.dxy?.reasons ?? []),
-        ...(macro?.gbp?.reasons ?? []),
-        ...(macro?.gbpusd?.reasons ?? []),
-    ].filter(Boolean).slice(0, 4), [macro]);
-
+    const keyPoints = useMemo(() => [...(macro?.dxy?.reasons ?? []), ...(macro?.gbp?.reasons ?? []), ...(macro?.gbpusd?.reasons ?? [])].filter(Boolean).slice(0, 4), [macro]);
     const events = (macro?.events ?? []).slice(0, 1);
-    const archive = (macro?.news ?? []).slice(0, 6);
+    const archive = (macro?.news ?? []) as ArchiveItem[];
     const confidence = Number(macro?.confidence ?? 0);
-    const focusComplex = [
-        macro?.gbpusd?.bias ? "FX" : null,
-        macro?.dxy?.bias ? "USD" : null,
-        macro?.events?.length ? "EVENTS" : null,
-    ].filter(Boolean).join(" · ") || "FX · INDICES · BONDS";
+    const focusComplex = [macro?.gbpusd?.bias ? "FX" : null, macro?.dxy?.bias ? "USD" : null, macro?.events?.length ? "EVENTS" : null].filter(Boolean).join(" · ") || "FX · INDICES · BONDS";
+
+    const filteredArchive = useMemo(() => archive.filter((item) => {
+        return (typeFilter === "ALL" || typeOf(item) === typeFilter) &&
+            (themeFilter === "ALL" || themeOf(item) === themeFilter) &&
+            (regimeFilter === "ALL" || regimeOf(item) === regimeFilter);
+    }), [archive, typeFilter, themeFilter, regimeFilter]);
 
     return (
         <PalPageShell page="reports" onPageChange={onPageChange}>
             <div className="min-h-screen bg-[#06100d] text-white">
                 <main className="mx-auto max-w-[1420px] px-4 py-6 sm:px-6 lg:px-8">
-                    <header className="mb-5">
-                        <p className="text-[10px] font-semibold uppercase tracking-[0.32em] text-emerald-300/80">Daily Reports</p>
-                        <h1 className="mt-1 text-2xl font-semibold tracking-tight sm:text-[27px]">Your daily pre-market and weekly context to build session bias.</h1>
-                    </header>
-
+                    <header className="mb-5"><p className="text-[10px] font-semibold uppercase tracking-[0.32em] text-emerald-300/80">Daily Reports</p><h1 className="mt-1 text-2xl font-semibold tracking-tight sm:text-[27px]">Your daily pre-market and weekly context to build session bias.</h1></header>
                     <article className="overflow-hidden rounded-xl border border-emerald-400/10 bg-[#081510] shadow-[0_20px_60px_rgba(0,0,0,.34)]">
                         <div className="grid gap-6 border-b border-white/[0.06] p-5 lg:grid-cols-[minmax(0,1fr)_290px] lg:p-6">
-                            <div>
-                                <div className="flex flex-wrap items-center gap-2 text-[9px] font-semibold uppercase tracking-wider">
-                                    <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2.5 py-1 text-emerald-300">Daily Brief</span>
-                                    <span className="text-zinc-600">Generated {text(macro ? "today" : "—")} · Includes bias + event context</span>
-                                </div>
-                                <h2 className="mt-3 max-w-4xl text-xl font-semibold leading-tight sm:text-[23px]">{text(macro?.headline, `${reportDate()} — Daily market context and risk map`)}</h2>
-                                <p className="mt-2 max-w-4xl text-xs leading-5 text-zinc-500">{text(macro?.summary, "PAL is assembling the latest macro, market and event context for the next trading session.")}</p>
-                                <div className="mt-3 flex flex-wrap gap-2 text-[9px] text-zinc-500">
-                                    <span className="rounded-full border border-white/[0.06] bg-white/[0.02] px-2.5 py-1">{reportTime()}</span>
-                                    <span className="rounded-full border border-white/[0.06] bg-white/[0.02] px-2.5 py-1">{Object.keys(macro?.markets ?? {}).length || 0} assets analysed</span>
-                                    <span className="rounded-full border border-white/[0.06] bg-white/[0.02] px-2.5 py-1">Market date {reportDate()}</span>
-                                    <span className="rounded-full border border-white/[0.06] bg-white/[0.02] px-2.5 py-1">Bias confidence · {confidence >= 65 ? "High" : confidence >= 40 ? "Medium" : "Low"}</span>
-                                </div>
-                            </div>
-
-                            <aside className="rounded-xl border border-white/[0.06] bg-black/15 p-4">
-                                <div className="text-[9px] font-semibold uppercase tracking-[0.2em] text-zinc-600">What matters today</div>
-                                <div className="mt-3 flex flex-wrap gap-1.5">
-                                    {['Yields', 'Equities', 'EUR', 'JPY', 'Geopolitics'].map((tag) => <span key={tag} className="rounded-full border border-white/[0.06] bg-white/[0.025] px-2.5 py-1 text-[9px] text-zinc-400">{tag}</span>)}
-                                </div>
-                                <div className="mt-4 text-[9px] font-semibold uppercase tracking-[0.2em] text-zinc-600">Primary drivers</div>
-                                <ul className="mt-2 space-y-1 text-[11px] text-zinc-400"><li>• {macro?.main_risk || "Macro repricing"}</li><li>• {macro?.dxy?.bias || "USD"}</li><li>• {macro?.gbpusd?.bias || "GBP/USD"}</li></ul>
-                            </aside>
+                            <div><div className="flex flex-wrap items-center gap-2 text-[9px] font-semibold uppercase tracking-wider"><span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2.5 py-1 text-emerald-300">Daily Brief</span><span className="text-zinc-600">Generated today · Includes bias + event context</span></div><h2 className="mt-3 max-w-4xl text-xl font-semibold leading-tight sm:text-[23px]">{text(macro?.headline, `${reportDate()} — Daily market context and risk map`)}</h2><p className="mt-2 max-w-4xl text-xs leading-5 text-zinc-500">{text(macro?.summary, "PAL is assembling the latest macro, market and event context for the next trading session.")}</p><div className="mt-3 flex flex-wrap gap-2 text-[9px] text-zinc-500"><span className="rounded-full border border-white/[0.06] bg-white/[0.02] px-2.5 py-1">{reportTime()}</span><span className="rounded-full border border-white/[0.06] bg-white/[0.02] px-2.5 py-1">{Object.keys(macro?.markets ?? {}).length || 0} assets analysed</span><span className="rounded-full border border-white/[0.06] bg-white/[0.02] px-2.5 py-1">Market date {reportDate()}</span><span className="rounded-full border border-white/[0.06] bg-white/[0.02] px-2.5 py-1">Bias confidence · {confidence >= 65 ? "High" : confidence >= 40 ? "Medium" : "Low"}</span></div></div>
+                            <aside className="rounded-xl border border-white/[0.06] bg-black/15 p-4"><div className="text-[9px] font-semibold uppercase tracking-[0.2em] text-zinc-600">What matters today</div><div className="mt-3 flex flex-wrap gap-1.5">{['Yields', 'Equities', 'EUR', 'JPY', 'Geopolitics'].map((tag) => <span key={tag} className="rounded-full border border-white/[0.06] bg-white/[0.025] px-2.5 py-1 text-[9px] text-zinc-400">{tag}</span>)}</div><div className="mt-4 text-[9px] font-semibold uppercase tracking-[0.2em] text-zinc-600">Primary drivers</div><ul className="mt-2 space-y-1 text-[11px] text-zinc-400"><li>• {macro?.main_risk || "Macro repricing"}</li><li>• {macro?.dxy?.bias || "USD"}</li><li>• {macro?.gbpusd?.bias || "GBP/USD"}</li></ul></aside>
                         </div>
-
                         <div className="grid gap-3 p-5 lg:grid-cols-[1.1fr_1.1fr_.75fr] lg:p-6">
-                            <section className="rounded-xl border border-emerald-400/10 bg-[#07120f] p-4">
-                                <div className="text-[9px] font-semibold uppercase tracking-[0.2em] text-emerald-300/80">Key points</div>
-                                <ul className="mt-3 space-y-3">{(keyPoints.length ? keyPoints : ["No detailed macro reasons currently supplied."]).map((point, index) => <li key={index} className="flex gap-2 text-[11px] leading-5 text-zinc-400"><span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-emerald-300/70" />{point}</li>)}</ul>
-                            </section>
-
-                            <section className="rounded-xl border border-emerald-400/10 bg-[#07120f] p-4">
-                                <div className="text-[9px] font-semibold uppercase tracking-[0.2em] text-emerald-300/80">Bias snapshot</div>
-                                <div className="mt-3 grid grid-cols-2 gap-2">
-                                    {[
-                                        ["Overall regime", macro?.gbpusd?.bias ?? "Mixed"],
-                                        ["Dollar tone", macro?.dxy?.bias ?? "Neutral"],
-                                        ["Rates pressure", macro?.main_risk ?? "Mixed"],
-                                        ["Focus complex", focusComplex],
-                                    ].map(([label, value]) => <div key={label} className="rounded-lg border border-white/[0.05] bg-black/15 p-3"><div className="text-[8px] uppercase tracking-widest text-zinc-700">{label}</div><div className="mt-1 text-[11px] font-semibold text-zinc-300">{text(value)}</div></div>)}
-                                </div>
-                            </section>
-
-                            <section className="grid grid-cols-2 gap-2 lg:grid-cols-1">
-                                {[["Report type", "Daily Brief"], ["Read state", read ? "Read" : "Unread"], ["Session focus", "NY"], ["Trade setup", "Watch closely"]].map(([label, value]) => <div key={label} className="rounded-lg border border-white/[0.05] bg-black/15 p-3"><div className="text-[8px] uppercase tracking-widest text-zinc-700">{label}</div><div className="mt-1 text-[11px] font-semibold text-zinc-300">{value}</div></div>)}
-                                <button type="button" onClick={() => setRead((value) => !value)} className="rounded-lg border border-white/[0.07] bg-white/[0.025] px-3 py-2 text-[9px] font-semibold uppercase tracking-wider text-zinc-400 hover:text-white">✓ {read ? "MARK UNREAD" : "MARK AS READ"}</button>
-                            </section>
+                            <section className="rounded-xl border border-emerald-400/10 bg-[#07120f] p-4"><div className="text-[9px] font-semibold uppercase tracking-[0.2em] text-emerald-300/80">Key points</div><ul className="mt-3 space-y-3">{(keyPoints.length ? keyPoints : ["No detailed macro reasons currently supplied."]).map((point, index) => <li key={index} className="flex gap-2 text-[11px] leading-5 text-zinc-400"><span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-emerald-300/70" />{point}</li>)}</ul></section>
+                            <section className="rounded-xl border border-emerald-400/10 bg-[#07120f] p-4"><div className="text-[9px] font-semibold uppercase tracking-[0.2em] text-emerald-300/80">Bias snapshot</div><div className="mt-3 grid grid-cols-2 gap-2">{[["Overall regime", macro?.gbpusd?.bias ?? "Mixed"],["Dollar tone", macro?.dxy?.bias ?? "Neutral"],["Rates pressure", macro?.main_risk ?? "Mixed"],["Focus complex", focusComplex]].map(([label, value]) => <div key={label} className="rounded-lg border border-white/[0.05] bg-black/15 p-3"><div className="text-[8px] uppercase tracking-widest text-zinc-700">{label}</div><div className="mt-1 text-[11px] font-semibold text-zinc-300">{text(value)}</div></div>)}</div></section>
+                            <section className="grid grid-cols-2 gap-2 lg:grid-cols-1">{[["Report type", "Daily Brief"],["Read state", read ? "Read" : "Unread"],["Session focus", "NY"],["Trade setup", "Watch closely"]].map(([label, value]) => <div key={label} className="rounded-lg border border-white/[0.05] bg-black/15 p-3"><div className="text-[8px] uppercase tracking-widest text-zinc-700">{label}</div><div className="mt-1 text-[11px] font-semibold text-zinc-300">{value}</div></div>)}<button type="button" onClick={() => setRead((value) => !value)} className="rounded-lg border border-white/[0.07] bg-white/[0.025] px-3 py-2 text-[9px] font-semibold uppercase tracking-wider text-zinc-400 hover:text-white">✓ {read ? "MARK UNREAD" : "MARK AS READ"}</button></section>
                         </div>
-
-                        <section className="mx-5 mb-5 rounded-xl border border-amber-400/15 bg-amber-400/[0.045] p-4 lg:mx-6 lg:mb-6">
-                            <div className="text-[8px] font-semibold uppercase tracking-[0.2em] text-amber-300/80">High-impact event</div>
-                            <h3 className="mt-2 text-sm font-semibold text-zinc-200">{events.length ? text((events[0] as any).title ?? (events[0] as any).name ?? (events[0] as any).event) : "No high-impact event currently supplied"}</h3>
-                            <p className="mt-1 text-[10px] text-zinc-500">{events.length ? `${text((events[0] as any).currency ?? (events[0] as any).ccy)} · ${text((events[0] as any).impact ?? (events[0] as any).importance)} · ${text((events[0] as any).time ?? (events[0] as any).scheduled_time)}` : "PAL will display the event only when the calendar provider supplies it."}</p>
-                            <button type="button" className="mt-3 rounded-lg border border-emerald-400/20 bg-emerald-400/10 px-3 py-2 text-[9px] font-semibold text-emerald-200">▣ Read full report</button>
-                        </section>
+                        <section className="mx-5 mb-5 rounded-xl border border-amber-400/15 bg-amber-400/[0.045] p-4 lg:mx-6 lg:mb-6"><div className="text-[8px] font-semibold uppercase tracking-[0.2em] text-amber-300/80">High-impact event</div><h3 className="mt-2 text-sm font-semibold text-zinc-200">{events.length ? text(events[0].title ?? events[0].name ?? events[0].event) : "No high-impact event currently supplied"}</h3><p className="mt-1 text-[10px] text-zinc-500">{events.length ? `${text(events[0].currency ?? events[0].ccy)} · ${text(events[0].impact ?? events[0].importance)} · ${text(events[0].time ?? events[0].scheduled_time)}` : "PAL will display the event only when the calendar provider supplies it."}</p><button type="button" className="mt-3 rounded-lg border border-emerald-400/20 bg-emerald-400/10 px-3 py-2 text-[9px] font-semibold text-emerald-200">▣ Read full report</button></section>
                     </article>
-
-                    <section className="mt-5">
-                        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-                            <h2 className="text-sm font-semibold text-zinc-200">Reports Archive</h2>
-                            <div className="flex gap-2"><button className="rounded-md border border-white/[0.06] bg-white/[0.02] px-3 py-1.5 text-[9px] text-zinc-500">All types⌄</button><button className="rounded-md border border-white/[0.06] bg-white/[0.02] px-3 py-1.5 text-[9px] text-zinc-500">All themes⌄</button><button className="rounded-md border border-white/[0.06] bg-white/[0.02] px-3 py-1.5 text-[9px] text-zinc-500">All regimes⌄</button></div>
-                        </div>
-                        <div className="grid overflow-hidden rounded-xl border border-white/[0.07] bg-[#08120f] md:grid-cols-3">
-                            {(archive.length ? archive : [{ title: "No archived macro stories supplied." }, { title: "PAL will populate the archive from the live report feed." }, { title: "No additional report context available." }]).map((item, index) => <article key={index} className="border-b border-white/[0.06] p-4 md:border-b-0 md:border-r last:border-r-0"><div className="flex items-center gap-2 text-[8px] uppercase tracking-wider"><span className="text-zinc-700">{reportDate()}</span><span className="rounded bg-emerald-400/10 px-1.5 py-0.5 text-emerald-300">Daily Brief</span></div><h3 className="mt-2 text-[11px] font-semibold leading-5 text-zinc-300">{text((item as any).title ?? (item as any).headline, "Macro report")}</h3><p className="mt-2 text-[10px] leading-4 text-zinc-600">{text((item as any).summary ?? macro?.summary, "Macro context and market pressure from PAL.")}</p><div className="mt-3 flex flex-wrap gap-1"><span className="rounded bg-white/[0.03] px-1.5 py-1 text-[8px] text-zinc-600">USD</span><span className="rounded bg-white/[0.03] px-1.5 py-1 text-[8px] text-zinc-600">Yields</span><span className="rounded bg-white/[0.03] px-1.5 py-1 text-[8px] text-zinc-600">Equities</span></div></article>)}
-                        </div>
-                    </section>
+                    <section className="mt-5"><div className="mb-3 flex flex-wrap items-center justify-between gap-3"><h2 className="text-sm font-semibold text-zinc-200">Reports Archive</h2><div className="flex flex-wrap gap-2">
+                        <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="rounded-md border border-white/[0.06] bg-[#08120f] px-3 py-1.5 text-[9px] text-zinc-400 outline-none"><option value="ALL">All types</option><option value="Daily Brief">Daily Brief</option><option value="Weekly">Weekly</option></select>
+                        <select value={themeFilter} onChange={(e) => setThemeFilter(e.target.value)} className="rounded-md border border-white/[0.06] bg-[#08120f] px-3 py-1.5 text-[9px] text-zinc-400 outline-none"><option value="ALL">All themes</option><option value="Yields">Yields</option><option value="Equities">Equities</option><option value="EUR">EUR</option><option value="JPY">JPY</option><option value="USD">USD</option></select>
+                        <select value={regimeFilter} onChange={(e) => setRegimeFilter(e.target.value)} className="rounded-md border border-white/[0.06] bg-[#08120f] px-3 py-1.5 text-[9px] text-zinc-400 outline-none"><option value="ALL">All regimes</option><option value="Risk-on">Risk-on</option><option value="Risk-off">Risk-off</option><option value="Mixed">Mixed</option></select>
+                    </div></div>
+                    <div className="grid overflow-hidden rounded-xl border border-white/[0.07] bg-[#08120f] md:grid-cols-3">
+                        {(filteredArchive.length ? filteredArchive : [{ title: "No reports match these filters." }]).map((item, index) => <article key={index} className="border-b border-white/[0.06] p-4 md:border-b-0 md:border-r last:border-r-0"><div className="flex items-center gap-2 text-[8px] uppercase tracking-wider"><span className="text-zinc-700">{reportDate()}</span><span className="rounded bg-emerald-400/10 px-1.5 py-0.5 text-emerald-300">{typeOf(item)}</span></div><h3 className="mt-2 text-[11px] font-semibold leading-5 text-zinc-300">{text(item.title ?? item.headline, "Macro report")}</h3><p className="mt-2 text-[10px] leading-4 text-zinc-600">{text(item.summary ?? macro?.summary, "Macro context and market pressure from PAL.")}</p><div className="mt-3 flex flex-wrap gap-1"><span className="rounded bg-white/[0.03] px-1.5 py-1 text-[8px] text-zinc-600">{themeOf(item)}</span><span className="rounded bg-white/[0.03] px-1.5 py-1 text-[8px] text-zinc-600">{regimeOf(item)}</span></div></article>)}
+                    </div></section>
                 </main>
             </div>
         </PalPageShell>
