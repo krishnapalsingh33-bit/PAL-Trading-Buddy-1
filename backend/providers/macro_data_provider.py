@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 class MacroDataProvider:
     BLS_V1_URL = "https://api.bls.gov/publicAPI/v1/timeseries/data/"
     BLS_V2_URL = "https://api.bls.gov/publicAPI/v2/timeseries/data/"
+    BLS_DOWNLOAD_BASE = "https://download.bls.gov/pub/time.series"
     FRED_URL = "https://api.stlouisfed.org/fred/series/observations"
     ONS_BASE_URL = "https://api.beta.ons.gov.uk/v1"
     ONS_DATASET_URL = f"{ONS_BASE_URL}/datasets/cpih01"
@@ -29,13 +30,12 @@ class MacroDataProvider:
         "us_payrolls": "CES0000000001",
         "us_average_hourly_earnings": "CES0500000003",
     }
-    FRED_SERIES = {
-        "fed_funds": "FEDFUNDS",
-        "us_2y": "DGS2",
-        "us_10y": "DGS10",
-        "us_10y_2y_spread": "T10Y2Y",
-        "vix": "VIXCLS",
+    BLS_DOWNLOAD_FILES = {
+        "us_cpi": ("cu", "cu.data.1.AllItems"),
+        "us_payrolls": ("ce", "ce.data.00a.TotalNonfarm.Employment"),
+        "us_average_hourly_earnings": ("ce", "ce.data.05b.TotalPrivate.AllEmployeeHoursAndEarnings"),
     }
+    FRED_SERIES = {"fed_funds": "FEDFUNDS", "us_2y": "DGS2", "us_10y": "DGS10", "us_10y_2y_spread": "T10Y2Y", "vix": "VIXCLS"}
 
     BLS_CACHE_TTL_SECONDS = 15 * 60
     FAILED_SOURCE_CACHE_TTL_SECONDS = 60
@@ -48,10 +48,7 @@ class MacroDataProvider:
     def __init__(self, timeout_seconds: float = 8.0) -> None:
         self.timeout_seconds = timeout_seconds
         self.session = requests.Session()
-        self.session.headers.update({
-            "User-Agent": "PAL-Trading-Buddy/2.2 (macro intelligence)",
-            "Accept": "application/json,text/html,text/plain,*/*",
-        })
+        self.session.headers.update({"User-Agent": "PAL-Trading-Buddy/2.2 (macro intelligence)", "Accept": "application/json,text/html,text/plain,*/*"})
 
     def get_snapshot(self) -> dict[str, Any]:
         snapshot = {"source_status": {}, "observations": {}, "fetched_at": datetime.now(timezone.utc).isoformat()}
@@ -70,6 +67,7 @@ class MacroDataProvider:
                     snapshot["observations"].update(observations)
                     snapshot["source_status"]["bls"] = status
                     return
+            observations: dict[str, list[dict[str, Any]]] = {}
             try:
                 observations = self._bls_batch("v1")
                 status = "CURRENT" if observations else "UNAVAILABLE"
@@ -79,8 +77,13 @@ class MacroDataProvider:
                     observations = self._bls_batch("v2")
                     status = "CURRENT" if observations else "UNAVAILABLE"
                 except Exception as second_exc:
-                    logger.warning("BLS macro provider unavailable: %s", second_exc)
-                    observations, status = {}, "UNAVAILABLE"
+                    logger.warning("BLS API unavailable, using official BLS downloads: %s", second_exc)
+                    try:
+                        observations = self._bls_download_fallback()
+                        status = "CURRENT" if observations else "UNAVAILABLE"
+                    except Exception as download_exc:
+                        logger.warning("BLS download fallback unavailable: %s", download_exc)
+                        status = "UNAVAILABLE"
             self._bls_cache = (now, observations, status)
             snapshot["observations"].update(observations)
             snapshot["source_status"]["bls"] = status
@@ -88,18 +91,19 @@ class MacroDataProvider:
     def _bls_batch(self, version: str) -> dict[str, list[dict[str, Any]]]:
         url = self.BLS_V1_URL if version == "v1" else self.BLS_V2_URL
         payload = {"seriesid": list(self.BLS_SERIES.values()), "startyear": "2025", "endyear": "2026"}
-        if version == "v2" and os.getenv("BLS_REGISTRATION_KEY", "").strip():
-            payload["registrationkey"] = os.getenv("BLS_REGISTRATION_KEY", "").strip()
+        key = os.getenv("BLS_REGISTRATION_KEY", "").strip()
+        if version == "v2" and key:
+            payload["registrationkey"] = key
         response = self.session.post(url, json=payload, timeout=self.timeout_seconds)
         response.raise_for_status()
         body = response.json() or {}
         if body.get("status") != "REQUEST_SUCCEEDED":
             raise RuntimeError(f"BLS {version} returned {body.get('message') or 'an unsuccessful response'}.")
         reverse = {v: k for k, v in self.BLS_SERIES.items()}
-        result = {}
+        result: dict[str, list[dict[str, Any]]] = {}
         for series in (body.get("Results") or {}).get("series") or []:
-            key = reverse.get(series.get("seriesID"))
-            if not key:
+            key_name = reverse.get(series.get("seriesID"))
+            if not key_name:
                 continue
             rows = []
             for item in series.get("data") or []:
@@ -107,8 +111,46 @@ class MacroDataProvider:
                 if value is not None:
                     rows.append({"period": item.get("periodName"), "year": item.get("year"), "value": value, "date": self._bls_date(item), "source": "U.S. Bureau of Labor Statistics"})
             if rows:
-                result[key] = rows
+                result[key_name] = rows
         return result
+
+    def _bls_download_fallback(self) -> dict[str, list[dict[str, Any]]]:
+        """Use BLS's official time-series download files when the public API quota is exhausted."""
+        result: dict[str, list[dict[str, Any]]] = {}
+        for name, (survey, filename) in self.BLS_DOWNLOAD_FILES.items():
+            url = f"{self.BLS_DOWNLOAD_BASE}/{survey}/{filename}"
+            response = self.session.get(url, timeout=max(self.timeout_seconds, 15))
+            response.raise_for_status()
+            rows = self._parse_bls_download(response.text, self.BLS_SERIES[name])
+            if rows:
+                result[name] = rows[-24:]
+
+        # Unemployment is small enough to obtain from the current official release.
+        try:
+            response = self.session.get("https://www.bls.gov/news.release/empsit.nr0.htm", timeout=self.timeout_seconds)
+            response.raise_for_status()
+            text = re.sub(r"<[^>]+>", " ", response.text)
+            text = re.sub(r"\s+", " ", unescape(text))
+            match = re.search(r"unemployment rate (?:was|was at|stood at)\s+(\d+(?:\.\d+)?)\s+percent", text, re.I)
+            if match:
+                result["us_unemployment"] = [{"period": "Current", "year": str(datetime.now(timezone.utc).year), "value": float(match.group(1)), "date": datetime.now(timezone.utc).date().isoformat(), "source": "U.S. Bureau of Labor Statistics"}]
+        except Exception as exc:
+            logger.warning("BLS employment release fallback failed: %s", exc)
+        return result
+
+    @staticmethod
+    def _parse_bls_download(text: str, series_id: str) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        for line in text.splitlines():
+            parts = line.strip().split("\t")
+            if len(parts) < 4 or parts[0].strip() != series_id:
+                continue
+            year, period, raw = parts[1].strip(), parts[2].strip(), parts[3].strip()
+            value = MacroDataProvider._number(raw)
+            if value is None or not re.fullmatch(r"\d{4}", year) or not re.fullmatch(r"M\d{2}", period):
+                continue
+            rows.append({"period": period, "year": year, "value": value, "date": f"{year}-{period}", "source": "U.S. Bureau of Labor Statistics"})
+        return rows
 
     def _load_ons(self, snapshot: dict[str, Any]) -> None:
         now = time.monotonic()
@@ -129,7 +171,6 @@ class MacroDataProvider:
             snapshot["source_status"]["ons"] = status
 
     def _fetch_ons_cpih(self) -> list[dict[str, Any]]:
-        """Fetch CPIH from the official ONS L522 HTML table; use the beta API only as fallback."""
         try:
             response = self.session.get(self.ONS_L522_DATA_URL, timeout=self.timeout_seconds)
             response.raise_for_status()
@@ -139,7 +180,6 @@ class MacroDataProvider:
             raise RuntimeError("ONS L522 page contained no monthly CPIH rows.")
         except Exception as exc:
             logger.warning("ONS L522 HTML endpoint failed, trying dataset API: %s", exc)
-
         dataset = self.session.get(self.ONS_DATASET_URL, timeout=self.timeout_seconds)
         dataset.raise_for_status()
         body = dataset.json() or {}
@@ -149,9 +189,8 @@ class MacroDataProvider:
             raise RuntimeError("ONS CPIH dataset did not expose latest_version.")
         response = self.session.get(f"{href.rstrip('/')}/observations", params={"time": "*", "geography": "K02000001", "aggregate": "cpih1dim1A0"}, timeout=self.timeout_seconds)
         response.raise_for_status()
-        observations = (response.json() or {}).get("observations") or []
         rows = []
-        for item in observations:
+        for item in (response.json() or {}).get("observations") or []:
             value = self._number(item.get("observation"))
             label = self._extract_time(item)
             if value is not None and label:
@@ -163,27 +202,13 @@ class MacroDataProvider:
 
     @staticmethod
     def _parse_l522_html(html: str) -> list[dict[str, Any]]:
-        """Parse monthly rows from the official ONS L522 HTML table."""
-        rows: list[dict[str, Any]] = []
-        # ONS renders rows as: <td>2026 JAN</td><td>140.4</td> ...
-        pattern = re.compile(
-            r"<td[^>]*>\s*(\d{4})\s+(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\s*</td>\s*"
-            r"<td[^>]*>\s*([^<]+?)\s*</td>",
-            re.IGNORECASE | re.DOTALL,
-        )
+        rows = []
+        pattern = re.compile(r"<td[^>]*>\s*(\d{4})\s+(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\s*</td>\s*<td[^>]*>\s*([^<]+?)\s*</td>", re.I | re.S)
         for match in pattern.finditer(html):
             year, month, raw_value = match.groups()
             value = MacroDataProvider._number(unescape(raw_value).replace(",", "").strip())
-            if value is None:
-                continue
-            label = f"{month.title()}-{year[2:]}"
-            rows.append({
-                "date": label,
-                "value": value,
-                "source": "UK Office for National Statistics",
-                "dataset": "CPIH",
-                "series": "L522",
-            })
+            if value is not None:
+                rows.append({"date": f"{month.title()}-{year[2:]}", "value": value, "source": "UK Office for National Statistics", "dataset": "CPIH", "series": "L522"})
         rows.sort(key=lambda row: MacroDataProvider._ons_sort_key(row["date"]))
         return rows
 
