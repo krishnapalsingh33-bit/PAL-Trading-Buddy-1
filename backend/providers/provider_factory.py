@@ -1,16 +1,20 @@
-from providers.tradingview_provider import TradingViewProvider
+from __future__ import annotations
+
+from providers.market_data_provider import MarketDataProvider
+from providers.online_market_data_provider import YahooMarketDataProvider
 
 
 class ProviderFactory:
-    """
-    Creates and manages provider instances.
-    """
+    """Central factory for the online market-data provider."""
 
-    _provider = None
+    _provider: MarketDataProvider | None = None
 
     @classmethod
-    def get_provider(cls):
+    def get_provider(cls) -> MarketDataProvider:
         if cls._provider is None:
-            cls._provider = TradingViewProvider()
-
+            cls._provider = YahooMarketDataProvider()
         return cls._provider
+
+    @classmethod
+    def reset(cls) -> None:
+        cls._provider = None
