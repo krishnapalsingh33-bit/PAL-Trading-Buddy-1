@@ -6,6 +6,7 @@ import re
 import threading
 import time
 from datetime import datetime, timezone
+from html import unescape
 from typing import Any
 
 import requests
@@ -19,7 +20,7 @@ class MacroDataProvider:
     FRED_URL = "https://api.stlouisfed.org/fred/series/observations"
     ONS_BASE_URL = "https://api.beta.ons.gov.uk/v1"
     ONS_DATASET_URL = f"{ONS_BASE_URL}/datasets/cpih01"
-    ONS_L522_DATA_URL = "https://www.ons.gov.uk/economy/inflationandpriceindices/timeseries/l522/mm23/data"
+    ONS_L522_DATA_URL = "https://www.ons.gov.uk/economy/inflationandpriceindices/timeseries/l522/mm23"
 
     BLS_SERIES = {
         "us_cpi": "CUSR0000SA0",
@@ -49,7 +50,7 @@ class MacroDataProvider:
         self.session = requests.Session()
         self.session.headers.update({
             "User-Agent": "PAL-Trading-Buddy/2.2 (macro intelligence)",
-            "Accept": "application/json,text/plain,*/*",
+            "Accept": "application/json,text/html,text/plain,*/*",
         })
 
     def get_snapshot(self) -> dict[str, Any]:
@@ -128,16 +129,16 @@ class MacroDataProvider:
             snapshot["source_status"]["ons"] = status
 
     def _fetch_ons_cpih(self) -> list[dict[str, Any]]:
-        """Use the current official ONS CPIH series L522; fall back to the v1 dataset API."""
+        """Fetch CPIH from the official ONS L522 HTML table; use the beta API only as fallback."""
         try:
             response = self.session.get(self.ONS_L522_DATA_URL, timeout=self.timeout_seconds)
             response.raise_for_status()
-            body = response.json() if "json" in response.headers.get("content-type", "").lower() else None
-            rows = self._parse_l522(body)
+            rows = self._parse_l522_html(response.text)
             if rows:
                 return rows[-24:]
+            raise RuntimeError("ONS L522 page contained no monthly CPIH rows.")
         except Exception as exc:
-            logger.warning("ONS L522 time-series endpoint failed, trying dataset API: %s", exc)
+            logger.warning("ONS L522 HTML endpoint failed, trying dataset API: %s", exc)
 
         dataset = self.session.get(self.ONS_DATASET_URL, timeout=self.timeout_seconds)
         dataset.raise_for_status()
@@ -146,47 +147,43 @@ class MacroDataProvider:
         href = latest.get("href") if isinstance(latest, dict) else None
         if not href:
             raise RuntimeError("ONS CPIH dataset did not expose latest_version.")
-        version_match = re.search(r"/versions/(\d+)$", href.rstrip("/"))
-        version = int(version_match.group(1)) if version_match else None
-        if version is None:
-            raise RuntimeError("Unable to determine ONS CPIH version.")
-        # The beta dataset API is still a valid fallback, but do one wildcard request only.
         response = self.session.get(f"{href.rstrip('/')}/observations", params={"time": "*", "geography": "K02000001", "aggregate": "cpih1dim1A0"}, timeout=self.timeout_seconds)
         response.raise_for_status()
         observations = (response.json() or {}).get("observations") or []
         rows = []
         for item in observations:
             value = self._number(item.get("observation"))
-            if value is None:
-                continue
             label = self._extract_time(item)
-            if label:
-                rows.append({"date": label, "value": value, "source": "UK Office for National Statistics", "dataset": "CPIH", "version": version})
+            if value is not None and label:
+                rows.append({"date": label, "value": value, "source": "UK Office for National Statistics", "dataset": "CPIH"})
         rows.sort(key=lambda row: self._ons_sort_key(row["date"]))
         if not rows:
             raise RuntimeError("ONS CPIH returned no usable observations.")
         return rows[-24:]
 
     @staticmethod
-    def _parse_l522(body: Any) -> list[dict[str, Any]]:
-        if not isinstance(body, dict):
-            return []
-        raw = body.get("years") or body.get("observations") or body.get("data") or []
-        if isinstance(raw, dict):
-            raw = raw.get("months") or raw.get("data") or []
-        rows = []
-        for item in raw if isinstance(raw, list) else []:
-            if not isinstance(item, dict):
+    def _parse_l522_html(html: str) -> list[dict[str, Any]]:
+        """Parse monthly rows from the official ONS L522 HTML table."""
+        rows: list[dict[str, Any]] = []
+        # ONS renders rows as: <td>2026 JAN</td><td>140.4</td> ...
+        pattern = re.compile(
+            r"<td[^>]*>\s*(\d{4})\s+(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\s*</td>\s*"
+            r"<td[^>]*>\s*([^<]+?)\s*</td>",
+            re.IGNORECASE | re.DOTALL,
+        )
+        for match in pattern.finditer(html):
+            year, month, raw_value = match.groups()
+            value = MacroDataProvider._number(unescape(raw_value).replace(",", "").strip())
+            if value is None:
                 continue
-            period = item.get("date") or item.get("period") or item.get("time")
-            value = item.get("value") if "value" in item else item.get("observation")
-            value = MacroDataProvider._number(value)
-            if value is None or not isinstance(period, str):
-                continue
-            match = re.match(r"^(\d{4})\s+(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)$", period.upper())
-            if match:
-                label = f"{match.group(2).title()}-{match.group(1)[2:]}"
-                rows.append({"date": label, "value": value, "source": "UK Office for National Statistics", "dataset": "CPIH", "series": "L522"})
+            label = f"{month.title()}-{year[2:]}"
+            rows.append({
+                "date": label,
+                "value": value,
+                "source": "UK Office for National Statistics",
+                "dataset": "CPIH",
+                "series": "L522",
+            })
         rows.sort(key=lambda row: MacroDataProvider._ons_sort_key(row["date"]))
         return rows
 
