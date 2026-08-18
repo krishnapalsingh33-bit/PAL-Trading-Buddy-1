@@ -1,47 +1,93 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter
 
 from services.pal_service import PALService
-from data.market_provider import get_symbol_data
+from providers.economic_calendar_provider import (
+    EconomicCalendarProvider,
+)
+
 
 router = APIRouter(
     prefix="/pal",
-    tags=["PAL Trading Buddy"]
+    tags=["PAL Trading Buddy"],
 )
 
+
 service = PALService()
+
+economic_calendar = EconomicCalendarProvider()
 
 
 @router.get("/analyze/{symbol}")
 def analyze(symbol: str):
 
-    gbp_market = get_symbol_data(symbol)
+    symbol = symbol.upper()
 
-    dxy_market = get_symbol_data("USDX")
+    # ==========================================================
+    # CURRENT UTC TIME
+    # ==========================================================
 
-    news_events = []
+    current_time = datetime.now(
+        timezone.utc
+    )
+
+    # ==========================================================
+    # ECONOMIC CALENDAR
+    # ==========================================================
+    #
+    # Apify provides the macroeconomic events.
+    #
+    # PAL only consumes:
+    # - USD events
+    # - GBP events
+    # - important economic releases
+    #
+    # No chart data is used.
+    #
+
+    try:
+
+        news_events = (
+            economic_calendar.get_events()
+        )
+
+    except Exception as ex:
+
+        print(
+            f"Economic calendar failed: {ex}"
+        )
+
+        news_events = []
+
+    # ==========================================================
+    # PAL MACRO / NEWS ANALYSIS
+    # ==========================================================
 
     report = service.analyze(
 
-        gbp_market=gbp_market,
-
-        dxy_market=dxy_market,
+        symbol=symbol,
 
         news_events=news_events,
 
-        current_time=datetime.utcnow()
+        current_time=current_time,
 
     )
+
+    # ==========================================================
+    # API RESPONSE
+    # ==========================================================
 
     return {
 
         "success": True,
 
-        "symbol": symbol.upper(),
+        "symbol": symbol,
 
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": (
+            current_time.isoformat()
+        ),
 
-        "report": report
+        "report": report,
 
     }

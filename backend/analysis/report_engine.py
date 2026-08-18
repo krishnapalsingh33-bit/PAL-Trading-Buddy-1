@@ -1,179 +1,413 @@
 from datetime import datetime
+from typing import Any
 
 from models.pal_report import PALReport
-from models.execution_decision import ExecutionDecision
-from models.pal_analysis import PALAnalysis
-from models.dxy_analysis import DXYAnalysis
 
 
 class ReportEngine:
     """
-    PAL Report Engine
+    PAL Macro Report Engine.
 
-    Converts every engine output into a clean,
-    frontend-friendly dashboard response.
+    Builds the frontend-facing macro intelligence report.
+
+    IMPORTANT:
+    This report contains macro/news information only.
+
+    It does NOT expose:
+    - trading workflow
+    - execution plans
+    - entry readiness
+    - trade actions
+    - strategy stages
+    - setup instructions
+    - strategy commentary
     """
 
     def build(
         self,
         symbol: str,
-        pal: PALAnalysis,
-        dxy: DXYAnalysis,
-        execution: ExecutionDecision,
-        market_health,
-        news,
-        ai_commentary
+        news: dict[str, Any],
     ) -> PALReport:
 
         report = PALReport()
 
         report.symbol = symbol.upper()
-        report.timestamp = datetime.utcnow().isoformat()
+
+        report.timestamp = (
+            datetime.utcnow().isoformat()
+        )
+
         report.success = True
 
         # ==========================================================
-        # MARKET OVERVIEW
+        # NEWS / MACRO
         # ==========================================================
 
-        report.market_health = {
+        headlines = news.get("headlines", [])
+        usd_news = news.get("usd", [])
+        gbp_news = news.get("gbp", [])
+        cross_news = news.get("cross", [])
 
-            "status": market_health.get("status"),
-            "score": market_health.get("score"),
-            "summary": market_health.get("summary")
+        upcoming_events = news.get(
+            "upcoming_events",
+            [],
+        )
 
-        }
+        recent_events = news.get(
+            "recent_events",
+            [],
+        )
+
+        high_impact = news.get(
+            "high_impact",
+            [],
+        )
+
+        warnings = news.get(
+            "warnings",
+            [],
+        )
+
+        key_risk = news.get(
+            "key_risk",
+            "No major scheduled macro catalyst currently identified.",
+        )
 
         # ==========================================================
-        # NEWS
+        # MACRO BIAS
+        # ==========================================================
+
+        macro_bias = news.get(
+            "macro_bias",
+            {},
+        )
+
+        dxy_bias = macro_bias.get(
+            "dxy",
+            {},
+        )
+
+        gbp_bias = macro_bias.get(
+            "gbp",
+            {},
+        )
+
+        gbpusd_bias = macro_bias.get(
+            "gbpusd",
+            {},
+        )
+
+        overall_confidence = macro_bias.get(
+            "confidence",
+            0,
+        )
+
+        bias_summary = macro_bias.get(
+            "summary",
+            "Macro bias is being evaluated.",
+        )
+
+        # ==========================================================
+        # MACRO MARKET FEED
+        # ==========================================================
+
+        markets = news.get(
+            "markets",
+            {},
+        )
+
+        # ==========================================================
+        # FRONTEND NEWS REPORT
         # ==========================================================
 
         report.news = {
 
-            "safe_to_trade": news.get("safe_to_trade"),
-            "summary": news.get("summary"),
-            "warnings": news.get("warnings", []),
-            "high_impact": news.get("high_impact", [])
+            "summary": news.get(
+                "summary",
+                "No major macro news currently identified.",
+            ),
 
+            "upcoming_events": upcoming_events,
+
+            "recent_events": recent_events,
+
+            "high_impact": high_impact,
+
+            "warnings": warnings,
+
+            "key_risk": key_risk,
+
+            "headlines": headlines,
+
+            "usd": usd_news,
+
+            "gbp": gbp_news,
+
+            "cross": cross_news,
+
+            "macro_bias": macro_bias,
+
+            "markets": markets,
         }
 
         # ==========================================================
-        # PAL OVERVIEW
+        # MACRO DASHBOARD
         # ==========================================================
 
-        report.pal = {
+        report.macro = {
 
-            "overall_bias": pal.overall_bias,
-            "execution_timeframe": pal.execution_timeframe,
-            "ready_for_entry": pal.ready_for_entry,
+            "headline": (
+                self._build_macro_headline(
+                    news=news,
+                    headlines=headlines,
+                    upcoming_events=upcoming_events,
+                )
+            ),
 
-            "workflow": [
+            "summary": news.get(
+                "summary",
+                "The latest fundamental market picture is being monitored by PAL.",
+            ),
 
-                {
+            "main_risk": key_risk,
 
-                    "timeframe": tf.timeframe,
+            "confidence": overall_confidence,
 
-                    "trend": tf.story.trend,
+            "dxy": {
+                "bias": dxy_bias.get(
+                    "bias",
+                    "UNKNOWN",
+                ),
+                "score": dxy_bias.get(
+                    "score",
+                    0,
+                ),
+                "confidence": dxy_bias.get(
+                    "confidence",
+                    0,
+                ),
+                "reasons": dxy_bias.get(
+                    "reasons",
+                    [],
+                ),
+                "bullish": (
+                    dxy_bias.get("bias")
+                    in [
+                        "BULLISH",
+                        "LEAN_BULLISH",
+                    ]
+                ),
+                "bearish": (
+                    dxy_bias.get("bias")
+                    in [
+                        "BEARISH",
+                        "LEAN_BEARISH",
+                    ]
+                ),
+            },
 
-                    "stage": tf.story.stage,
+            "gbp": {
+                "bias": gbp_bias.get(
+                    "bias",
+                    "UNKNOWN",
+                ),
+                "score": gbp_bias.get(
+                    "score",
+                    0,
+                ),
+                "confidence": gbp_bias.get(
+                    "confidence",
+                    0,
+                ),
+                "reasons": gbp_bias.get(
+                    "reasons",
+                    [],
+                ),
+                "bullish": (
+                    gbp_bias.get("bias")
+                    in [
+                        "BULLISH",
+                        "LEAN_BULLISH",
+                    ]
+                ),
+                "bearish": (
+                    gbp_bias.get("bias")
+                    in [
+                        "BEARISH",
+                        "LEAN_BEARISH",
+                    ]
+                ),
+            },
 
-                    "grade": tf.grade.grade,
+            "gbpusd": {
+                "bias": gbpusd_bias.get(
+                    "bias",
+                    "UNKNOWN",
+                ),
+                "score": gbpusd_bias.get(
+                    "score",
+                    0,
+                ),
+                "confidence": gbpusd_bias.get(
+                    "confidence",
+                    0,
+                ),
+                "reasons": gbpusd_bias.get(
+                    "reasons",
+                    [],
+                ),
+                "bullish": (
+                    gbpusd_bias.get("bias")
+                    in [
+                        "BULLISH",
+                        "LEAN_BULLISH",
+                    ]
+                ),
+                "bearish": (
+                    gbpusd_bias.get("bias")
+                    in [
+                        "BEARISH",
+                        "LEAN_BEARISH",
+                    ]
+                ),
+            },
 
-                    "decision": tf.grade.decision,
+            "events": upcoming_events,
 
-                    "next_step": tf.story.next_step,
+            "news": headlines,
 
-                    "completed_steps": tf.story.completed_steps,
+            "usd_news": usd_news,
 
-                    "missing_steps": tf.story.missing_steps
+            "gbp_news": gbp_news,
 
-                }
+            "cross_news": cross_news,
 
-                for tf in pal.timeframes
+            "bias_summary": bias_summary,
 
-            ]
-
+            # IMPORTANT:
+            # Do not leave this as {}.
+            # PALService supplies the actual market feed.
+            "markets": markets,
         }
 
         # ==========================================================
-        # DXY
+        # LEGACY FIELDS
         # ==========================================================
 
-        report.dxy = {
+        report.execution = {}
 
-            "trend": dxy.trend,
-
-            "expected_gbp_direction": dxy.expected_gbp_direction,
-
-            "aligned": dxy.gbp_alignment,
-
-            "confirmations": dxy.confirmations,
-
-            "summary": dxy.summary
-
-        }
+        report.ai_commentary = {}
 
         # ==========================================================
-        # EXECUTION
-        # ==========================================================
-
-        report.execution = {
-
-            "action": execution.action,
-
-            "trend": execution.trend,
-
-            "timeframe": execution.timeframe,
-
-            "stage": execution.stage,
-
-            "reason": execution.reason,
-
-            "confirmations": execution.confirmations,
-
-            "summary": execution.summary
-
-        }
-
-        # ==========================================================
-        # AI COMMENTARY
-        # ==========================================================
-
-        report.ai_commentary = ai_commentary
-
-        # ==========================================================
-        # DASHBOARD
+        # SUMMARY
         # ==========================================================
 
         report.summary = {
 
             "market": {
-
-                "bias": pal.overall_bias,
-
-                "health": market_health.get("status"),
-
-                "safe_to_trade": news.get("safe_to_trade")
-
+                "symbol": symbol.upper(),
+                "bias": gbpusd_bias.get(
+                    "bias",
+                    "UNKNOWN",
+                ),
+                "health": "MONITORING",
             },
 
-            "execution": {
+            "news": {
 
-                "action": execution.action,
+                "summary": news.get(
+                    "summary",
+                    "",
+                ),
 
-                "stage": execution.stage,
+                "upcoming_events": upcoming_events,
 
-                "reason": execution.reason
+                "key_risk": key_risk,
 
+                "headlines": headlines,
+
+                "usd": usd_news,
+
+                "gbp": gbp_news,
+
+                "cross": cross_news,
             },
 
             "dxy": {
+                "trend": dxy_bias.get(
+                    "bias",
+                    "UNKNOWN",
+                ),
+            },
 
-                "trend": dxy.trend,
+            "macro_bias": {
 
-                "aligned": dxy.gbp_alignment
+                "dxy": dxy_bias,
 
-            }
+                "gbp": gbp_bias,
 
+                "gbpusd": gbpusd_bias,
+
+                "confidence": overall_confidence,
+
+                "summary": bias_summary,
+            },
+
+            "markets": markets,
         }
 
         return report
+
+    # ==========================================================
+    # MACRO HEADLINE
+    # ==========================================================
+
+    @staticmethod
+    def _build_macro_headline(
+        news: dict[str, Any],
+        headlines: list[dict],
+        upcoming_events: list[dict],
+    ) -> str:
+
+        if upcoming_events:
+
+            first = upcoming_events[0]
+
+            minutes = first.get("minutes")
+
+            title = first.get(
+                "title",
+                "Major macro event",
+            )
+
+            if (
+                isinstance(minutes, int)
+                and minutes <= 60
+            ):
+
+                return (
+                    f"{title} is the next "
+                    "major macro catalyst."
+                )
+
+        for headline in headlines:
+
+            if headline.get("impact") == "High":
+
+                return (
+                    "Major macro news is "
+                    "currently driving attention."
+                )
+
+        if headlines:
+
+            return (
+                "Recent USD and GBP "
+                "macro developments are "
+                "being monitored."
+            )
+
+        return (
+            "Macro conditions are "
+            "being monitored."
+        )

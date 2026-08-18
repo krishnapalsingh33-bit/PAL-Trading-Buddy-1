@@ -1,122 +1,172 @@
-from analysis.pal_engine import PALEngine
-from analysis.dxy_engine import DXYEngine
-from analysis.execution_engine import ExecutionEngine
-from analysis.market_health_engine import MarketHealthEngine
-from analysis.news_engine import NewsEngine
-from analysis.report_engine import ReportEngine
+from datetime import datetime
 
-from services.ai_commentary_engine import AICommentaryEngine
+from analysis.news_engine import NewsEngine
+from analysis.macro_bias_engine import MacroBiasEngine
+from analysis.report_engine import ReportEngine
+from providers.google_news_provider import GoogleNewsProvider
 
 
 class PALService:
+    """
+    PAL Macro Intelligence Service.
+
+    PAL is focused exclusively on:
+
+    - macroeconomic intelligence
+    - important economic events
+    - recent macro catalysts
+    - macro news headlines
+    - USD macro news
+    - GBP macro news
+    - GBP/USD cross-market news
+    - fundamental directional bias
+    - market risks
+    - concise fundamental context
+
+    PAL does NOT:
+
+    - analyze trading strategy
+    - analyze chart structure
+    - generate entries
+    - generate execution plans
+    - calculate setup stages
+    - determine trade readiness
+    """
 
     def __init__(self):
 
-        self.pal_engine = PALEngine()
-        self.dxy_engine = DXYEngine()
-        self.execution_engine = ExecutionEngine()
-        self.market_health_engine = MarketHealthEngine()
+        # ==========================================================
+        # NEWS ENGINE
+        # ==========================================================
+
         self.news_engine = NewsEngine()
-        self.ai_commentary_engine = AICommentaryEngine()
+
+        # ==========================================================
+        # GOOGLE NEWS
+        # ==========================================================
+
+        self.google_news_provider = (
+            GoogleNewsProvider()
+        )
+
+        # ==========================================================
+        # MACRO BIAS ENGINE
+        # ==========================================================
+
+        self.macro_bias_engine = (
+            MacroBiasEngine()
+        )
+
+        # ==========================================================
+        # REPORT ENGINE
+        # ==========================================================
+
         self.report_engine = ReportEngine()
 
     def analyze(
         self,
-        gbp_market,
-        dxy_market,
-        news_events,
-        current_time
+        symbol: str,
+        news_events: list[dict],
+        current_time: datetime,
     ):
 
-        # -----------------------------
-        # PAL
-        # -----------------------------
+        # ==========================================================
+        # GOOGLE NEWS
+        # ==========================================================
 
-        pal = self.pal_engine.analyze(gbp_market)
+        try:
 
-        # -----------------------------
-        # DXY
-        # -----------------------------
+            headlines = (
+                self.google_news_provider.get_headlines()
+            )
 
-        dxy = self.dxy_engine.analyze(dxy_market)
+        except Exception as ex:
 
-        # -----------------------------
-        # Execution
-        # -----------------------------
+            print(
+                "Google News provider failed: "
+                f"{ex}"
+            )
 
-        execution = self.execution_engine.analyze(
-            pal,
-            dxy
-        )
+            headlines = []
 
-        # -----------------------------
-        # Market Health
-        # -----------------------------
-
-        market_health = self.market_health_engine.analyze(
-            pal,
-            dxy
-        )
-
-        # -----------------------------
-        # News
-        # -----------------------------
+        # ==========================================================
+        # NEWS / MACRO INTELLIGENCE
+        # ==========================================================
 
         news = self.news_engine.analyze(
-            news_events,
-            current_time
+            events=news_events,
+            now=current_time,
+            articles=headlines,
         )
 
-        # -----------------------------
-        # Primary Workflow
-        # -----------------------------
+        # ==========================================================
+        # MACRO BIAS
+        # ==========================================================
+        #
+        # IMPORTANT:
+        # MacroBiasEngine.analyze() does not accept `now`.
+        # Passing now here causes:
+        #
+        # TypeError:
+        # unexpected keyword argument 'now'
+        #
+        # Keep the call compatible with the engine.
+        #
 
-        primary = next(
-            (
-                tf for tf in pal.timeframes
-                if tf.timeframe == "H4"
-            ),
-            pal.timeframes[0]
-        )
+        try:
 
-        # -----------------------------
-        # AI Commentary
-        # -----------------------------
+            macro_bias = (
+                self.macro_bias_engine.analyze(
+                    news=news,
+                )
+            )
 
-        ai_commentary = self.ai_commentary_engine.generate(
+        except Exception as ex:
 
-            workflow={
-                "trend": pal.overall_bias,
-                "stage": primary.story.stage,
-                "next_step": primary.story.next_step,
-                "completed_steps": primary.story.completed_steps,
-                "missing_steps": primary.story.missing_steps,
-            },
+            print(
+                "Macro bias engine failed: "
+                f"{ex}"
+            )
 
-            execution={
-                "action": execution.action,
-                "reason": execution.reason,
-            },
+            macro_bias = {
+                "dxy": {
+                    "bias": "UNKNOWN",
+                    "bullish": None,
+                    "bearish": None,
+                },
 
-            market_health=market_health,
+                "gbp": {
+                    "bias": "UNKNOWN",
+                    "bullish": None,
+                    "bearish": None,
+                },
 
-            dxy={
-                "aligned": dxy.gbp_alignment,
-            },
+                "gbpusd": {
+                    "bias": "UNKNOWN",
+                    "bullish": None,
+                    "bearish": None,
+                },
 
-            news=news,
-        )
+                "confidence": None,
 
-        # -----------------------------
-        # Final Report
-        # -----------------------------
+                "summary": (
+                    "Macro bias could not be calculated."
+                ),
+
+                "evidence": [],
+            }
+
+        # ==========================================================
+        # MERGE MACRO BIAS
+        # ==========================================================
+
+        news["macro_bias"] = macro_bias
+
+        # ==========================================================
+        # FINAL PAL REPORT
+        # ==========================================================
 
         return self.report_engine.build(
-            symbol=gbp_market.symbol,
-            pal=pal,
-            dxy=dxy,
-            execution=execution,
-            market_health=market_health,
+            symbol=symbol,
             news=news,
-            ai_commentary=ai_commentary,
         )

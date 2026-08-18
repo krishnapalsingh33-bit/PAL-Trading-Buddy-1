@@ -70,4 +70,4 @@ class StoryResult:
     # Confidence
     # ----------------------------------
 
-    confidence: int = 0
+    confidence: int = 0 

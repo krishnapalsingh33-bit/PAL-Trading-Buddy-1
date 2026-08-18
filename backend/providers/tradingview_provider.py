@@ -13,11 +13,32 @@ logger = logging.getLogger(__name__)
 
 class TradingViewProvider(BaseProvider):
     """
-    Downloads market data from TradingView.
+    TradingView market-data provider.
+
+    Used primarily for DXY because the challenge-account
+    MT5 broker does not provide a DXY/USDX symbol.
     """
 
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+
+class TradingViewProvider(BaseProvider):
+
     def __init__(self):
-        self.tv = TvDatafeed()
+
+        username = os.getenv("TRADINGVIEW_USERNAME")
+        password = os.getenv("TRADINGVIEW_PASSWORD")
+
+        if username and password:
+            self.tv = TvDatafeed(
+                username=username,
+                password=password,
+            )
+        else:
+            self.tv = TvDatafeed()
 
     def _download(
         self,
@@ -38,33 +59,41 @@ class TradingViewProvider(BaseProvider):
             )
 
             if df is None or df.empty:
+
                 logger.warning(
                     "%s returned no data.",
                     name,
                 )
+
                 return []
 
-            candles: list[Candle] = []
+            candles = []
 
             for index, row in df.iterrows():
 
+                candle_time = (
+                    index.to_pydatetime()
+                    if hasattr(index, "to_pydatetime")
+                    else index
+                )
+
                 candles.append(
                     Candle(
-                        datetime=index.to_pydatetime()
-                        if isinstance(index, datetime)
-                        else index,
+                        datetime=candle_time,
                         open=float(row["open"]),
                         high=float(row["high"]),
                         low=float(row["low"]),
                         close=float(row["close"]),
-                        volume=float(row["volume"])
-                        if "volume" in row
-                        else None,
+                        volume=(
+                            float(row["volume"])
+                            if "volume" in row
+                            else None
+                        ),
                     )
                 )
 
             logger.info(
-                "%s : %s candles downloaded.",
+                "%s: %s candles downloaded.",
                 name,
                 len(candles),
             )
@@ -74,7 +103,7 @@ class TradingViewProvider(BaseProvider):
         except Exception as ex:
 
             logger.warning(
-                "%s failed : %s",
+                "%s failed: %s",
                 name,
                 ex,
             )
@@ -84,11 +113,14 @@ class TradingViewProvider(BaseProvider):
     def get_market_data(
         self,
         symbol: str,
+        exchange: str = "FX_IDC",
     ) -> MarketData:
 
-        exchange = "FX_IDC"
+        symbol = symbol.upper()
 
-        data = MarketData(symbol=symbol)
+        data = MarketData(
+            symbol=symbol
+        )
 
         downloads = [
 
@@ -108,55 +140,70 @@ class TradingViewProvider(BaseProvider):
 
             ("m5", Interval.in_5_minute, 5000),
 
-            # tvDatafeed often doesn't support this interval.
-            # We'll derive it later if necessary.
             ("m1", Interval.in_1_minute, 5000),
         ]
 
         for field, interval, bars in downloads:
 
+            candles = self._download(
+                symbol=symbol,
+                exchange=exchange,
+                interval=interval,
+                n_bars=bars,
+                name=field.upper(),
+            )
+
             setattr(
                 data,
                 field,
-                self._download(
-                    symbol,
-                    exchange,
-                    interval,
-                    bars,
-                    field.upper(),
-                ),
+                candles,
             )
 
-        # ---------------------------------------------------
-        # Build M3 from M1 if TradingView doesn't support it.
-        # ---------------------------------------------------
+        # --------------------------------------------------
+        # Build M3 from M1
+        # --------------------------------------------------
 
         data.m3 = []
 
         if len(data.m1) >= 3:
 
-            for i in range(2, len(data.m1), 3):
+            for i in range(
+                2,
+                len(data.m1),
+                3,
+            ):
 
                 group = data.m1[i - 2:i + 1]
+
+                if len(group) != 3:
+                    continue
 
                 data.m3.append(
                     Candle(
                         datetime=group[-1].datetime,
                         open=group[0].open,
-                        high=max(c.high for c in group),
-                        low=min(c.low for c in group),
+                        high=max(
+                            candle.high
+                            for candle in group
+                        ),
+                        low=min(
+                            candle.low
+                            for candle in group
+                        ),
                         close=group[-1].close,
                         volume=sum(
-                            c.volume or 0
-                            for c in group
+                            candle.volume or 0
+                            for candle in group
                         ),
                     )
                 )
 
         return data
 
-    def get_dxy_data(
-        self,
-    ) -> MarketData:
+    def get_dxy_data(self) -> MarketData:
 
-        return self.get_market_data("DXY")
+        # TradingView's real-time DXY symbol is TVC:DXY.
+        return self.get_market_data(
+            symbol="DXY",
+            exchange="TVC",
+        )

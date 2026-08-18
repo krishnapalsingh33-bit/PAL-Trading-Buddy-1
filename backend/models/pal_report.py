@@ -5,7 +5,16 @@ from typing import Any
 @dataclass
 class PALReport:
     """
-    Final response returned by the PAL API.
+    Final macro/news intelligence response returned by PAL.
+
+    PAL is focused on:
+    - macro market context
+    - important economic events
+    - recent macro catalysts
+    - market risks
+    - concise fundamental intelligence
+
+    PAL does NOT expose trading strategy or execution data.
     """
 
     # ==========================================================
@@ -13,27 +22,23 @@ class PALReport:
     # ==========================================================
 
     symbol: str = ""
+
     timestamp: str = ""
+
     success: bool = True
 
     # ==========================================================
-    # Engine Outputs
+    # Macro Intelligence
     # ==========================================================
 
-    market_health: dict[str, Any] = field(default_factory=dict)
-
-    news: dict[str, Any] = field(default_factory=dict)
-
-    dxy: dict[str, Any] = field(default_factory=dict)
-
-    pal: dict[str, Any] = field(default_factory=dict)
-
-    execution: dict[str, Any] = field(default_factory=dict)
-
-    ai_commentary: dict[str, Any] = field(default_factory=dict)
+    macro: dict[str, Any] = field(
+        default_factory=dict
+    )
 
     # ==========================================================
-    # Dashboard Summary
+    # News Intelligence
     # ==========================================================
 
-    summary: dict[str, Any] = field(default_factory=dict)
+    news: dict[str, Any] = field(
+        default_factory=dict
+    )
