@@ -33,11 +33,19 @@ def _journal_trades(context: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _journal_answer(question: str, context: dict[str, Any]) -> str | None:
+    q = question.lower()
+    journal_intent = any(x in q for x in (
+        "journal", "trade history", "recent trades", "completed trades", "my trades",
+        "execution", "executions", "entry", "exit", "risk management", "discipline",
+        "trade quality", "weak", "weakness", "best trade", "worst trade", "p&l", "profit", "loss"
+    ))
+    if not journal_intent:
+        return None
+
     trades = _journal_trades(context)
     if not trades:
-        return "I don't have any completed journal trades in the supplied PAL context, so I can't make a trade-history judgment yet."
+        return "I don't have completed journal trades in the supplied PAL context. I can still answer the market/macro question, but I can't make a trade-history judgment until journal records are supplied."
 
-    q = question.lower()
     macro = context.get("macro") or {}
     pair_bias = _bias((macro.get("gbpusd") or {}).get("bias"))
     dxy_bias = _bias((macro.get("dxy") or {}).get("bias"))
@@ -46,16 +54,16 @@ def _journal_answer(question: str, context: dict[str, Any]) -> str | None:
     losses = sum(1 for t in trades if str(t.get("result", "")).upper() in {"LOSS", "LOST", "LOSE"} or float(t.get("net_profit") or 0) < 0)
     breakeven = len(trades) - wins - losses
     net = sum(float(t.get("net_profit") or 0) for t in trades)
-    win_rate = (wins / len(trades) * 100) if trades else 0
+    win_rate = wins / len(trades) * 100
 
-    if any(x in q for x in ("review", "trade history", "recent trades", "history")):
+    if any(x in q for x in ("review", "trade history", "recent trades", "history", "my trades", "p&l")):
         return (
             f"Journal review: {len(trades)} completed trade(s), {wins} win(s), {losses} loss(es), "
             f"{breakeven} breakeven, win rate {win_rate:.1f}%, net P&L {net:.2f}. "
-            "This is based only on the supplied journal records; it does not infer missing execution rules or reasons for entry."
+            "This is based only on the supplied journal records; it does not infer missing setup rules or reasons for entry."
         )
 
-    if any(x in q for x in ("conflict", "market data", "market")):
+    if any(x in q for x in ("conflict", "market data", "market alignment", "aligned", "alignment")):
         conflicts: list[str] = []
         for trade in trades:
             symbol = str(trade.get("symbol") or "").upper()
@@ -67,9 +75,9 @@ def _journal_answer(question: str, context: dict[str, Any]) -> str | None:
                     conflicts.append(f"{symbol} {direction} trade conflicts with GBP/USD bearish macro bias")
         if conflicts:
             return "Potential market-alignment conflicts found: " + "; ".join(conflicts) + f". Current DXY bias: {dxy_bias}."
-        return f"I don't see a direct GBP/USD direction conflict in the supplied trades. Current GBP/USD bias is {pair_bias} and DXY bias is {dxy_bias}. This checks direction only; it cannot verify your ICT/FVG/CISD rules because those fields are not present in the journal data."
+        return f"I don't see a direct GBP/USD direction conflict in the supplied trades. Current GBP/USD bias is {pair_bias} and DXY bias is {dxy_bias}. This checks direction only; it cannot verify ICT/FVG/CISD rules because those fields are not present in the journal data."
 
-    if any(x in q for x in ("execution", "weak", "quality")):
+    if any(x in q for x in ("execution", "weak", "weakness", "quality", "entry", "exit", "risk management", "discipline")):
         missing = []
         for field in ("stop_loss", "take_profit", "comment"):
             if not any(t.get(field) not in (None, "", 0) for t in trades):
@@ -104,7 +112,7 @@ def _fallback(question: str, context: dict[str, Any]) -> str:
     events = macro.get("events") or []
     q = question.lower()
 
-    if any(x in q for x in ("brief", "today", "what matters")):
+    if any(x in q for x in ("brief", "today", "what matters", "what should i watch", "where should i look", "what to watch")):
         lines = [f"Today's PAL brief: GBP/USD is {pair}; DXY is {dxy}; GBP is {gbp}.", summary]
         if events:
             titles = [str(e.get("title") or e.get("name") or e.get("event") or "Macro event") for e in events[:4] if isinstance(e, dict)]
@@ -114,10 +122,19 @@ def _fallback(question: str, context: dict[str, Any]) -> str:
             lines.append("Recent news is available in the Macro Intelligence / News Stories panels.")
         return " ".join(lines)
 
-    if "bias" in q or "bullish" in q or "bearish" in q or "neutral" in q:
-        return f"Current evidence: GBP/USD {pair}, DXY {dxy}, GBP {gbp}. {summary} PAL will keep the bias neutral/unknown when the evidence is not strong enough; it should not invent conviction."
+    if any(x in q for x in ("bias", "bullish", "bearish", "neutral", "direction")):
+        return f"Current evidence: GBP/USD {pair}, DXY {dxy}, GBP {gbp}. {summary} PAL keeps the bias neutral/unknown when the supplied evidence is not strong enough; it does not invent conviction."
 
-    return f"I can answer from the current PAL evidence. GBP/USD bias: {pair}. DXY: {dxy}. GBP: {gbp}. {summary}"
+    if any(x in q for x in ("news", "headline", "event", "calendar")):
+        event_text = ""
+        if events:
+            titles = [str(e.get("title") or e.get("name") or e.get("event") or "Macro event") for e in events[:5] if isinstance(e, dict)]
+            if titles:
+                event_text = " Scheduled events: " + "; ".join(titles) + "."
+        news_text = " Recent news is available in PAL's supplied news context." if news else " No news items were supplied to PAL."
+        return f"News/event view: GBP/USD {pair}, DXY {dxy}, GBP {gbp}. {summary}{event_text}{news_text}"
+
+    return f"Based on the supplied PAL evidence: GBP/USD {pair}, DXY {dxy}, GBP {gbp}. {summary} I need more specific market, news, or journal data to answer that question precisely."
 
 
 @router.post("")
@@ -127,10 +144,11 @@ def assistant(payload: AssistantRequest) -> dict[str, Any]:
     history = payload.history[-8:]
     system = (
         "You are PAL, an evidence-first AI trading intelligence assistant. "
+        "Answer the user's CURRENT question, not the previous question. Never reuse a previous answer merely because the topic is similar. "
         "Use ONLY the supplied PAL context. Never fabricate prices, news, events, sources, or certainty. "
-        "Explain what evidence supports or contradicts a bias, what matters today, and where the user can inspect the evidence in PAL. "
         "For journal/trade questions, compare the trade details against the supplied market/macro/news context and explicitly flag conflicts. "
         "For execution-quality questions, do not infer missing stop-loss, take-profit, setup, or rationale fields. "
+        "For market questions, use the supplied macro/news/events context rather than journal logic unless the user explicitly asks about trades. "
         "Do not give personalized financial instructions or guarantee outcomes. If evidence is missing, say so. "
         "Be concise but useful, using clear sections when appropriate."
     )
