@@ -21,49 +21,46 @@
     filter: brightness(var(--pal-ui-opacity));
 }
 
-/* The three sidebar brightness buttons now affect the entire dashboard. */
 html[data-pal-brightness="low"] .pal-dashboard { --pal-ui-opacity: .72; }
 html[data-pal-brightness="medium"] .pal-dashboard { --pal-ui-opacity: 1; }
 html[data-pal-brightness="high"] .pal-dashboard { --pal-ui-opacity: 1.18; }
 
 .pal-dashboard::before {
-    content: "";
-    position: fixed;
-    inset: 0;
-    pointer-events: none;
+    content: ""; position: fixed; inset: 0; pointer-events: none;
     background-image: linear-gradient(rgba(39,245,208,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(39,245,208,.025) 1px,transparent 1px);
-    background-size: 44px 44px;
-    mask-image: linear-gradient(to bottom,black,transparent 85%);
-    animation: pal-grid-drift 18s linear infinite;
+    background-size: 44px 44px; mask-image: linear-gradient(to bottom,black,transparent 85%); animation: pal-grid-drift 18s linear infinite;
 }
 @keyframes pal-grid-drift { from { transform:translate3d(0,0,0); } to { transform:translate3d(44px,44px,0); } }
+
+/* PAL global: a quiet orbital globe stays in the background without competing with data. */
+.pal-dashboard::after {
+    content:""; position:fixed; right:3.5vw; bottom:4vh; width:190px; height:190px; border-radius:50%; pointer-events:none; z-index:0; opacity:.18;
+    background:
+      radial-gradient(circle at 34% 28%,rgba(39,245,208,.55),transparent 20%),
+      radial-gradient(circle at 52% 55%,rgba(22,140,255,.16),transparent 54%),
+      repeating-linear-gradient(90deg,transparent 0 18px,rgba(39,245,208,.22) 19px 20px,transparent 21px 36px),
+      repeating-linear-gradient(0deg,transparent 0 18px,rgba(39,245,208,.16) 19px 20px,transparent 21px 36px);
+    border:1px solid rgba(39,245,208,.35); box-shadow:0 0 55px rgba(39,245,208,.12),inset 0 0 45px rgba(39,245,208,.08); animation:pal-orbit 14s ease-in-out infinite;
+}
+@keyframes pal-orbit { 0%,100%{transform:translateY(0) rotate(-2deg);filter:brightness(.85)} 50%{transform:translateY(-10px) rotate(2deg);filter:brightness(1.15)} }
 
 .pal-dashboard aside {
     background: linear-gradient(180deg,rgba(2,11,12,.98),rgba(1,6,7,.98)) !important;
     border-color: rgba(72,255,225,.10) !important;
-    box-shadow: 18px 0 70px rgba(0,0,0,.45),inset -1px 0 rgba(72,255,225,.04);
-    filter: none;
+    box-shadow: 18px 0 70px rgba(0,0,0,.45),inset -1px 0 rgba(72,255,225,.04); filter:none;
 }
 
 .pal-dashboard section {
-    position: relative;
-    background: linear-gradient(135deg,rgba(15,35,36,.72),rgba(3,11,13,.82)) !important;
-    border-color: var(--pal-border) !important;
-    box-shadow: 0 25px 80px rgba(0,0,0,.34),inset 0 1px rgba(255,255,255,.025);
-    backdrop-filter: blur(22px);
-    -webkit-backdrop-filter: blur(22px);
-    transition: border-color 300ms ease,box-shadow 300ms ease,transform 300ms ease;
+    position: relative; background: linear-gradient(135deg,rgba(15,35,36,.72),rgba(3,11,13,.82)) !important;
+    border-color: var(--pal-border) !important; box-shadow:0 25px 80px rgba(0,0,0,.34),inset 0 1px rgba(255,255,255,.025);
+    backdrop-filter:blur(22px); -webkit-backdrop-filter:blur(22px); transition:border-color 300ms ease,box-shadow 300ms ease,transform 300ms ease;
 }
-.pal-dashboard section::before {
-    content:""; position:absolute; top:0; left:-40%; width:40%; height:1px;
-    background:linear-gradient(90deg,transparent,var(--pal-cyan),transparent);
-    opacity:.45; animation:pal-light-scan 8s ease-in-out infinite; pointer-events:none;
-}
+.pal-dashboard section::before { content:"";position:absolute;top:0;left:-40%;width:40%;height:1px;background:linear-gradient(90deg,transparent,var(--pal-cyan),transparent);opacity:.45;animation:pal-light-scan 8s ease-in-out infinite;pointer-events:none; }
 @keyframes pal-light-scan { 0%{left:-40%;opacity:0} 20%{opacity:.5} 50%{left:100%;opacity:.2} 100%{left:100%;opacity:0} }
-.pal-dashboard section:hover { border-color:var(--pal-border-bright) !important; box-shadow:0 30px 90px rgba(0,0,0,.45),0 0 35px rgba(39,245,208,.035),inset 0 1px rgba(255,255,255,.035); }
+.pal-dashboard section:hover { border-color:var(--pal-border-bright) !important;box-shadow:0 30px 90px rgba(0,0,0,.45),0 0 35px rgba(39,245,208,.035),inset 0 1px rgba(255,255,255,.035); }
 
 .pal-dashboard [class*="rounded-xl"],.pal-dashboard [class*="rounded-2xl"] { transition:transform 220ms ease,border-color 220ms ease,box-shadow 220ms ease,background 220ms ease; }
-.pal-dashboard [class*="rounded-xl"]:hover,.pal-dashboard [class*="rounded-2xl"]:hover { border-color:rgba(39,245,208,.18) !important; box-shadow:0 12px 45px rgba(0,0,0,.35),0 0 25px rgba(39,245,208,.025); transform:translateY(-1px); }
+.pal-dashboard [class*="rounded-xl"]:hover,.pal-dashboard [class*="rounded-2xl"]:hover { border-color:rgba(39,245,208,.18) !important;box-shadow:0 12px 45px rgba(0,0,0,.35),0 0 25px rgba(39,245,208,.025);transform:translateY(-1px); }
 
 .pal-dashboard .text-white { color:#f4f8f8 !important; }
 .pal-dashboard .text-zinc-500 { color:#718083 !important; }
@@ -73,11 +70,9 @@ html[data-pal-brightness="high"] .pal-dashboard { --pal-ui-opacity: 1.18; }
 .pal-dashboard .text-emerald-300,.pal-dashboard .text-emerald-400 { color:var(--pal-green) !important; }
 .pal-dashboard .text-red-300,.pal-dashboard .text-red-400 { text-shadow:0 0 18px rgba(255,92,103,.12); }
 .pal-dashboard .text-zinc-300 { color:#c6ced0 !important; }
-
-.pal-dashboard [class*="bg-emerald-400"],.pal-dashboard [class*="bg-emerald-500"] { box-shadow:0 0 10px rgba(56,232,164,.35); animation:pal-live-pulse 2.2s ease-in-out infinite; }
+.pal-dashboard [class*="bg-emerald-400"],.pal-dashboard [class*="bg-emerald-500"] { box-shadow:0 0 10px rgba(56,232,164,.35);animation:pal-live-pulse 2.2s ease-in-out infinite; }
 @keyframes pal-live-pulse { 0%,100%{opacity:.65;box-shadow:0 0 5px rgba(56,232,164,.15)} 50%{opacity:1;box-shadow:0 0 16px rgba(56,232,164,.55)} }
 
-/* Remove the artificial staircase up/down chart motion. Use a restrained signal sweep instead. */
 .pal-dashboard .pal-chart { animation:none !important; }
 .pal-dashboard svg .pal-chart { opacity:.12 !important; }
 .pal-dashboard .pal-scan { animation:pal-scan 6s ease-in-out infinite; }
@@ -86,18 +81,42 @@ html[data-pal-brightness="high"] .pal-dashboard { --pal-ui-opacity: 1.18; }
 @keyframes pal-globe { 0%,100%{transform:translate(-50%,-50%) rotate(-1deg)} 50%{transform:translate(-50%,-50%) rotate(1deg)} }
 .pal-dashboard .pal-float { animation:pal-float 5s ease-in-out infinite; }
 @keyframes pal-float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-4px)} }
-
-/* Replace chart-line cards with a clean moving energy bar when the existing chart SVG is present. */
 .pal-dashboard article:has(.pal-chart) .pal-chart { visibility:hidden; }
-.pal-dashboard article:has(.pal-chart)::after {
-    content:""; position:absolute; left:16px; right:16px; bottom:12px; height:2px; border-radius:999px;
-    background:linear-gradient(90deg,transparent 0%,rgba(39,245,208,.08) 12%,rgba(39,245,208,.7) 48%,rgba(39,245,208,.12) 82%,transparent 100%);
-    background-size:220% 100%; animation:pal-energy 3.8s linear infinite; opacity:.65;
-}
+.pal-dashboard article:has(.pal-chart)::after { content:"";position:absolute;left:16px;right:16px;bottom:12px;height:2px;border-radius:999px;background:linear-gradient(90deg,transparent 0%,rgba(39,245,208,.08) 12%,rgba(39,245,208,.7) 48%,rgba(39,245,208,.12) 82%,transparent 100%);background-size:220% 100%;animation:pal-energy 3.8s linear infinite;opacity:.65; }
 @keyframes pal-energy { from{background-position:220% 0} to{background-position:-20% 0} }
 
+/* Premium motion layer for Macro Desk, Macro View and Daily Reports. Motion is intentionally subtle so live financial data remains the focus. */
+main > section, main > article {
+    animation: pal-page-enter .55s cubic-bezier(.22,1,.36,1) both;
+}
+main > section:nth-of-type(2), main > article:nth-of-type(2) { animation-delay:.06s; }
+main > section:nth-of-type(3), main > article:nth-of-type(3) { animation-delay:.12s; }
+main > section:nth-of-type(4), main > article:nth-of-type(4) { animation-delay:.18s; }
+@keyframes pal-page-enter { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+
+main > section > article, main > section > div, main > article article {
+    position:relative; overflow:hidden;
+}
+main > section > article::before, main > section > div::before, main > article article::before {
+    content:""; position:absolute; inset:0; pointer-events:none; opacity:0; background:linear-gradient(105deg,transparent 0%,rgba(39,245,208,.045) 42%,rgba(39,245,208,.12) 50%,transparent 58%); transform:translateX(-110%); transition:opacity .25s ease;
+}
+main > section > article:hover::before, main > section > div:hover::before, main > article article:hover::before { opacity:1; animation:pal-card-sweep 1.2s ease-out; }
+@keyframes pal-card-sweep { to{transform:translateX(110%)} }
+
+main h1, main h2 { text-wrap:balance; }
+main [class*="rounded-2xl"], main [class*="rounded-xl"] { will-change:transform; }
+main [class*="bg-emerald-400"] { animation:pal-soft-pulse 2.8s ease-in-out infinite; }
+@keyframes pal-soft-pulse { 0%,100%{filter:brightness(.92)} 50%{filter:brightness(1.14)} }
+main [style*="width:"] { transition:width 800ms cubic-bezier(.22,1,.36,1); }
+main select, main button { transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease,background .2s ease; }
+main button:hover { transform:translateY(-1px); }
+
+/* Live status / data-health rows get a quiet scanning highlight. */
+main [class*="uppercase"] + div [class*="rounded"] { animation:pal-data-breathe 4s ease-in-out infinite; }
+@keyframes pal-data-breathe { 0%,100%{box-shadow:inset 0 0 0 rgba(39,245,208,0)} 50%{box-shadow:inset 0 0 22px rgba(39,245,208,.025)} }
+
 .pal-dashboard button { transition:transform 180ms ease,box-shadow 180ms ease,border-color 180ms ease,background 180ms ease; }
-.pal-dashboard button:hover { transform:translateY(-1px); box-shadow:0 8px 30px rgba(0,0,0,.35),0 0 18px rgba(39,245,208,.05); }
+.pal-dashboard button:hover { transform:translateY(-1px);box-shadow:0 8px 30px rgba(0,0,0,.35),0 0 18px rgba(39,245,208,.05); }
 .pal-dashboard button:active { transform:translateY(0); }
 .pal-dashboard input,.pal-dashboard select,.pal-dashboard textarea { background:rgba(2,9,10,.75) !important;border-color:rgba(255,255,255,.08) !important;color:#eef4f4 !important;outline:none; }
 .pal-dashboard input:focus,.pal-dashboard select:focus,.pal-dashboard textarea:focus { border-color:rgba(39,245,208,.35) !important;box-shadow:0 0 0 3px rgba(39,245,208,.06),0 0 20px rgba(39,245,208,.04); }
@@ -106,5 +125,5 @@ html[data-pal-brightness="high"] .pal-dashboard { --pal-ui-opacity: 1.18; }
 .pal-dashboard ::-webkit-scrollbar-thumb { background:linear-gradient(180deg,rgba(39,245,208,.30),rgba(39,245,208,.08));border-radius:999px; }
 .pal-dashboard ::-webkit-scrollbar-thumb:hover { background:rgba(39,245,208,.45); }
 
-@media(max-width:1024px) { .pal-dashboard { background:radial-gradient(circle at 50% 0%,rgba(39,245,208,.06),transparent 40%),#020708; } }
-@media(prefers-reduced-motion:reduce) { .pal-dashboard *, .pal-dashboard::before, .pal-dashboard section::before { animation:none !important;transition:none !important; } }
+@media(max-width:1024px) { .pal-dashboard { background:radial-gradient(circle at 50% 0%,rgba(39,245,208,.06),transparent 40%),#020708; } .pal-dashboard::after { right:2vw;bottom:2vh;width:140px;height:140px;opacity:.11; } }
+@media(prefers-reduced-motion:reduce) { .pal-dashboard *, .pal-dashboard::before, .pal-dashboard::after, .pal-dashboard section::before, main > section, main > article, main > section > article::before, main > section > div::before, main > article article::before { animation:none !important;transition:none !important; } }
