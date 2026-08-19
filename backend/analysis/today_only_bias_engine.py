@@ -73,9 +73,6 @@ class TodayOnlyBiasEngine:
         gbp, usd = max(-5, min(5, gbp)), max(-5, min(5, usd))
         pair = max(-10, min(10, gbp - usd))
 
-        # A small but directionally consistent current-day evidence stack should
-        # not be flattened to NEUTRAL by an overly high threshold. The engine
-        # still requires at least one directional piece of evidence.
         for event in self._upcoming(news)[:3]:
             c = self._currency(event); minutes = event.get("minutes")
             if c in {"GBP", "USD"} and isinstance(minutes, (int, float)) and 0 <= minutes <= 180:
@@ -156,7 +153,7 @@ class TodayOnlyBiasEngine:
     @staticmethod
     def _currency(item):
         c=str(item.get("currency", item.get("ccy", "")) or "").upper()
-        if c in {"GBP", "USD":
+        if c in {"GBP", "USD"}:
             return c
         t=TodayOnlyBiasEngine._text(item).lower()
         if any(x in t for x in ("boe", "bank of england", "sterling", "pound", "uk ", "britain", "uk inflation")):
