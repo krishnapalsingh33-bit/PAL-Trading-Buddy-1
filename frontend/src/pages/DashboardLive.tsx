@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import Sidebar from "../components/layout/Sidebar";
+import TodayBiasPanel from "../components/TodayBiasPanel";
 import { usePAL } from "../hooks/usePAL";
 
 function normalizeBias(value: unknown): string {
@@ -94,6 +95,7 @@ export default function DashboardLive({
     const dxy = normalizeBias(macro?.dxy?.bias);
     const gbp = normalizeBias(macro?.gbp?.bias);
     const gbpusd = normalizeBias(macro?.gbpusd?.bias);
+    const todayBias = macro?.today_bias ?? report?.today_bias ?? {};
     const marketEntries = [
         ["DXY", ["DXY"]],
         ["GBP/USD", ["GBPUSD", "GBP/USD"]],
@@ -174,6 +176,8 @@ export default function DashboardLive({
                                 <div className="mt-1 text-xs text-zinc-500">unknown stays unknown</div>
                             </div>
                         </div>
+
+                        <TodayBiasPanel todayBias={todayBias} />
 
                         <section className="mt-5 rounded-2xl border border-white/[0.07] bg-white/[0.02] p-5 lg:p-6">
                             <div className="flex items-end justify-between gap-4">
