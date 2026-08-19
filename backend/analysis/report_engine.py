@@ -5,32 +5,10 @@ from models.pal_report import PALReport
 
 
 class ReportEngine:
-    """
-    PAL Macro Report Engine.
+    """Build the frontend-facing PAL macro intelligence report."""
 
-    Builds the frontend-facing macro intelligence report.
-
-    IMPORTANT:
-    This report contains macro/news information only.
-
-    It does NOT expose:
-    - trading workflow
-    - execution plans
-    - entry readiness
-    - trade actions
-    - strategy stages
-    - setup instructions
-    - strategy commentary
-    """
-
-    def build(
-        self,
-        symbol: str,
-        news: dict[str, Any],
-    ) -> PALReport:
-
+    def build(self, symbol: str, news: dict[str, Any]) -> PALReport:
         report = PALReport()
-
         report.symbol = symbol.upper()
         report.timestamp = datetime.utcnow().isoformat()
         report.success = True
@@ -45,6 +23,7 @@ class ReportEngine:
         warnings = news.get("warnings", [])
         key_risk = news.get("key_risk", "No major scheduled macro catalyst currently identified.")
         macro_bias = news.get("macro_bias", {})
+        today_bias = news.get("today_bias", {})
         macro_data = news.get("macro_data", {})
         markets = news.get("markets", {})
 
@@ -66,6 +45,7 @@ class ReportEngine:
             "gbp": gbp_news,
             "cross": cross_news,
             "macro_bias": macro_bias,
+            "today_bias": today_bias,
             "markets": markets,
             "macro_data": macro_data,
         }
@@ -99,6 +79,7 @@ class ReportEngine:
                 "bullish": gbpusd_bias.get("bias") in ["BULLISH", "LEAN_BULLISH"],
                 "bearish": gbpusd_bias.get("bias") in ["BEARISH", "LEAN_BEARISH"],
             },
+            "today_bias": today_bias,
             "events": upcoming_events,
             "news": headlines,
             "usd_news": usd_news,
@@ -113,32 +94,14 @@ class ReportEngine:
         report.ai_commentary = {}
 
         report.summary = {
-            "market": {
-                "symbol": symbol.upper(),
-                "bias": gbpusd_bias.get("bias", "UNKNOWN"),
-                "health": "MONITORING",
-            },
-            "news": {
-                "summary": news.get("summary", ""),
-                "upcoming_events": upcoming_events,
-                "key_risk": key_risk,
-                "headlines": headlines,
-                "usd": usd_news,
-                "gbp": gbp_news,
-                "cross": cross_news,
-            },
+            "market": {"symbol": symbol.upper(), "bias": gbpusd_bias.get("bias", "UNKNOWN"), "health": "MONITORING"},
+            "news": {"summary": news.get("summary", ""), "upcoming_events": upcoming_events, "key_risk": key_risk, "headlines": headlines, "usd": usd_news, "gbp": gbp_news, "cross": cross_news},
             "dxy": {"trend": dxy_bias.get("bias", "UNKNOWN")},
-            "macro_bias": {
-                "dxy": dxy_bias,
-                "gbp": gbp_bias,
-                "gbpusd": gbpusd_bias,
-                "confidence": overall_confidence,
-                "summary": bias_summary,
-            },
+            "macro_bias": {"dxy": dxy_bias, "gbp": gbp_bias, "gbpusd": gbpusd_bias, "confidence": overall_confidence, "summary": bias_summary},
+            "today_bias": today_bias,
             "markets": markets,
             "macro_data": macro_data,
         }
-
         return report
 
     @staticmethod
@@ -149,12 +112,9 @@ class ReportEngine:
             title = first.get("title", "Major macro event")
             if isinstance(minutes, int) and minutes <= 60:
                 return f"{title} is the next major macro catalyst."
-
         for headline in headlines:
             if headline.get("impact") == "High":
                 return "Major macro news is currently driving attention."
-
         if headlines:
             return "Recent USD and GBP macro developments are being monitored."
-
         return "Macro conditions are being monitored."
