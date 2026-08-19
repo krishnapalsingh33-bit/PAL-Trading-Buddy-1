@@ -4,6 +4,7 @@ from analysis.news_engine import NewsEngine
 from analysis.macro_bias_engine import MacroBiasEngine
 from analysis.report_engine import ReportEngine
 from providers.google_news_provider import GoogleNewsProvider
+from providers.macro_news_provider import MacroNewsProvider
 from services.market_data_service import MarketDataService
 from services.macro_data_service import MacroDataService
 
@@ -14,17 +15,47 @@ class PALService:
     def __init__(self):
         self.news_engine = NewsEngine()
         self.google_news_provider = GoogleNewsProvider()
+        self.gdelt_news_provider = MacroNewsProvider()
         self.macro_bias_engine = MacroBiasEngine()
         self.report_engine = ReportEngine()
         self.market_data_service = MarketDataService()
         self.macro_data_service = MacroDataService()
 
+    @staticmethod
+    def _merge_news_sources(google_headlines: list[dict], gdelt_headlines: list[dict]) -> list[dict]:
+        merged = []
+        seen = set()
+        for article in [*(google_headlines or []), *(gdelt_headlines or [])]:
+            if not isinstance(article, dict):
+                continue
+            title = str(article.get("title", "")).strip()
+            if not title:
+                continue
+            key = title.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            normalized = dict(article)
+            normalized.setdefault("provider", "Google News")
+            normalized.setdefault("published_at", article.get("published", ""))
+            merged.append(normalized)
+        merged.sort(key=lambda item: str(item.get("published_at", item.get("published", ""))), reverse=True)
+        return merged[:40]
+
     def analyze(self, symbol: str, news_events: list[dict], current_time: datetime):
         try:
-            headlines = self.google_news_provider.get_headlines()
+            google_headlines = self.google_news_provider.get_headlines()
         except Exception as ex:
             print(f"Google News provider failed: {ex}")
-            headlines = []
+            google_headlines = []
+
+        try:
+            gdelt_headlines = self.gdelt_news_provider.get_news()
+        except Exception as ex:
+            print(f"GDELT news provider failed: {ex}")
+            gdelt_headlines = []
+
+        headlines = self._merge_news_sources(google_headlines, gdelt_headlines)
 
         news = self.news_engine.analyze(
             events=news_events,
@@ -45,9 +76,6 @@ class PALService:
                 "evidence": [],
             }
 
-        # Conservative fallback: if the primary model is neutral/unknown, use
-        # only explicit fundamental language from the live news feed. This does
-        # not use price/technical headlines and never creates an entry signal.
         macro_bias = self._apply_live_news_sanity(macro_bias, news.get("headlines", []))
 
         try:
@@ -84,12 +112,16 @@ class PALService:
         news["macro_bias"] = macro_bias
         news["markets"] = markets
         news["macro_data"] = macro_data
+        news["news_sources"] = {
+            "google_news": len(google_headlines),
+            "gdelt": len(gdelt_headlines),
+            "merged": len(headlines),
+        }
 
         return self.report_engine.build(symbol=symbol, news=news)
 
     @staticmethod
     def _apply_live_news_sanity(macro_bias: dict, headlines: list[dict]) -> dict:
-        """Resolve weak neutral output only when fresh news contains clear macro evidence."""
         if not isinstance(macro_bias, dict) or not isinstance(headlines, list):
             return macro_bias
 
