@@ -5,6 +5,7 @@ from api.routes import router
 from api.journal_routes import router as journal_router
 from api.news_routes import router as news_router
 from api.history_routes import router as history_router
+from api.assistant_routes import router as assistant_router
 
 app = FastAPI(title="PAL Trading Buddy API", version="2.0.0", description="PAL Trading Buddy Backend")
 
@@ -14,6 +15,7 @@ app.include_router(router)
 app.include_router(journal_router)
 app.include_router(news_router)
 app.include_router(history_router)
+app.include_router(assistant_router)
 
 @app.get("/")
 def root():
