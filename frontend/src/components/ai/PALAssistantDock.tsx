@@ -15,20 +15,37 @@ export default function PALAssistantDock() {
     return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
 
-  const journalQuery = useQuery({ queryKey: ["pal-assistant-journal", 365], queryFn: () => fetchJournal(365), enabled: page === "journal", staleTime: 15000, refetchInterval: false });
+  const isJournal = page === "journal";
+  const journalQuery = useQuery({
+    queryKey: ["pal-assistant-journal", 365],
+    queryFn: () => fetchJournal(365),
+    enabled: isJournal,
+    staleTime: 15000,
+    refetchInterval: false,
+  });
 
   const context = useMemo(() => ({
-    page,
+    page: isJournal ? "journal" : "dashboard",
     macro: data?.report?.macro ?? null,
     news: data?.report?.news ?? null,
     summary: data?.report?.summary ?? null,
     market_snapshot: data?.report?.macro?.markets ?? null,
-    journal: page === "journal" ? (journalQuery.data?.data?.trades ?? []) : undefined,
-  }), [data, journalQuery.data, page]);
+    // Never expose journal records to the dashboard assistant.
+    journal: isJournal ? (journalQuery.data?.data?.trades ?? []) : undefined,
+  }), [data, journalQuery.data, isJournal]);
 
-  const prompts = page === "journal"
+  const prompts = isJournal
     ? ["Review my trade history", "Which trades conflict with the market data?", "Track my execution quality", "Where was my execution weak?"]
     : ["What is today's brief?", "What news matters today?", "Explain the current bias", "Where should I look today?"];
 
-  return <PALAssistant context={context} title="PAL Intelligence" subtitle={page === "journal" ? "Ask about your trades and the market" : "Ask about today's live evidence"} quickPrompts={prompts} accent={page === "journal" ? "emerald" : "cyan"} />;
+  return (
+    <PALAssistant
+      key={isJournal ? "journal-assistant" : "dashboard-assistant"}
+      context={context}
+      title="PAL Intelligence"
+      subtitle={isJournal ? "Ask about your trades and the market" : "Ask about today's live evidence"}
+      quickPrompts={prompts}
+      accent={isJournal ? "emerald" : "cyan"}
+    />
+  );
 }
