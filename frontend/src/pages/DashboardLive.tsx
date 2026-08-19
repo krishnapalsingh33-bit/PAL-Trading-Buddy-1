@@ -28,7 +28,8 @@ export default function DashboardLive({ activePage = "dashboard", onPageChange }
     const todayGbp = normalizeBias(today?.gbp?.bias);
     const todayGbpusd = normalizeBias(today?.gbpusd?.bias);
     const dxy = normalizeBias(macro?.dxy?.bias); const gbp = normalizeBias(macro?.gbp?.bias); const gbpusd = normalizeBias(macro?.gbpusd?.bias);
-    const marketEntries = [["DXY", ["DXY"]], ["GBP/USD", ["GBPUSD", "GBP/USD"]], ["Gold", ["XAUUSD", "GOLD", "XAU/USD"]], ["WTI", ["USOIL", "WTI", "OIL", "XTIUSD"]], ["US 10Y", ["US10Y", "10Y", "TNX"]], ["US500", ["US500", "SPX", "SP500"]]].map(([label, keys]) => { const source = Array.isArray(markets) ? markets.find((item: any) => keys.some((key: string) => String(item?.symbol ?? item?.ticker ?? "").toUpperCase() === key.toUpperCase())) : keys.map((key: string) => markets?.[key]).find(Boolean); return { label, quote: source ?? {} }; });
+    const marketSpecs: Array<[string, string[]]> = [["DXY", ["DXY"]], ["GBP/USD", ["GBPUSD", "GBP/USD"]], ["Gold", ["XAUUSD", "GOLD", "XAU/USD"]], ["WTI", ["USOIL", "WTI", "OIL", "XTIUSD"]], ["US 10Y", ["US10Y", "10Y", "TNX"]], ["US500", ["US500", "SPX", "SP500"]]];
+    const marketEntries = marketSpecs.map(([label, keys]) => { const source = Array.isArray(markets) ? markets.find((item: any) => keys.some((key) => String(item?.symbol ?? item?.ticker ?? "").toUpperCase() === key.toUpperCase())) : keys.map((key) => markets?.[key]).find(Boolean); return { label, quote: source ?? {} }; });
     const liveCount = marketEntries.filter(({ quote }) => String(quote.status ?? "").toUpperCase() === "CURRENT").length; const sessionsOpen = Object.values(sessions).filter(Boolean).length;
 
     return <div className="min-h-screen bg-[#050607] text-zinc-100"><div className="flex min-h-screen"><Sidebar symbol="GBPUSD" activePage={activePage} onPageChange={onPageChange} /><main className="min-w-0 flex-1 overflow-y-auto"><div className="mx-auto max-w-[1500px] p-5 lg:p-8">
