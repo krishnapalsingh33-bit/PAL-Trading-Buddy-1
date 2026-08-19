@@ -9,13 +9,12 @@ class TodayOnlyBiasEngine:
     """Independent TODAY-only GBP/USD bias engine.
 
     No MacroBiasEngine score, weekly regime, or broader macro bias is used.
-    Direction comes only from dated current-day news, released actual-vs-
-    forecast data, and light current-day price context. Upcoming events are
-    context/risk only and cannot create direction.
+    Direction comes only from current-day news, released data, and light
+    current-day price context. Upcoming events are risk/context only.
     """
 
     ZONES = {"Asia": "Asia/Tokyo", "London": "Europe/London", "New York": "America/New_York"}
-    GBP_POS = ("hawkish boe", "boe rate hike", "boe hikes", "boe tightening", "uk inflation rises", "uk inflation rose", "uk inflation jumps", "uk inflation jumped", "uk inflation remains elevated", "hot uk inflation", "strong uk growth", "uk growth accelerates", "strong uk economy", "uk employment strengthens", "unemployment falls", "uk wages accelerate", "wage growth accelerates", "strong retail sales", "sterling gains", "pound gains")
+    GBP_POS = ("hawkish boe", "boe rate hike", "boe hikes", "boe tightening", "uk inflation rises", "uk inflation rose", "uk inflation jumps", "uk inflation jumped", "uk inflation accelerates", "uk inflation accelerated", "uk inflation remains elevated", "hot uk inflation", "strong uk growth", "uk growth accelerates", "strong uk economy", "uk employment strengthens", "unemployment falls", "uk wages accelerate", "wage growth accelerates", "strong retail sales", "sterling gains", "pound gains")
     GBP_NEG = ("dovish boe", "boe rate cut", "boe cuts", "boe easing", "uk inflation falls", "uk inflation fell", "uk inflation drops", "uk inflation dropped", "cooling uk inflation", "soft uk inflation", "weak uk growth", "uk growth slows", "uk recession", "uk employment weakens", "uk wages slow", "wage growth slows", "unemployment rises", "weak retail sales", "sterling falls", "pound falls")
     USD_POS = ("hawkish fed", "hawkish federal reserve", "fed rate hike", "fed hikes", "higher for longer", "fed tightening", "rate hike bets rise", "strong us inflation", "hot us inflation", "us inflation rises", "us inflation rose", "sticky us inflation", "strong us jobs", "strong us payrolls", "strong employment", "falling unemployment", "strong retail sales", "strong us growth", "us growth accelerates", "dollar gains", "dollar rises")
     USD_NEG = ("dovish fed", "dovish federal reserve", "fed rate cut", "fed cuts", "fed easing", "rate cut bets rise", "rate cut expectations rise", "rate hike bets fade", "weak us inflation", "soft us inflation", "cooling us inflation", "us inflation falls", "us inflation fell", "weak us jobs", "weak us payrolls", "weak employment", "rising unemployment", "weak retail sales", "weak us growth", "us growth slows", "economic slowdown", "dollar falls", "dollar drops")
@@ -23,10 +22,9 @@ class TodayOnlyBiasEngine:
 
     def build(self, _macro_bias: dict[str, Any], news: dict[str, Any], now: datetime) -> dict[str, Any]:
         now = now.astimezone(timezone.utc)
-        gbp = usd = 0.0
-        reasons: list[str] = []
-        evidence = 0
+        gbp = usd = 0.0; reasons: list[str] = []; evidence = 0
 
+        # 1) Current-day headlines only.
         for item in self._today_news(news, now):
             c = self._currency(item); title = self._text(item)
             if c not in {"GBP", "USD"} or not title: continue
@@ -37,25 +35,40 @@ class TodayOnlyBiasEngine:
             else: usd += direction * weight
             evidence += 1; reasons.append(f"{c}: {title}")
 
+        # 2) Current-day released data. Forecast surprise is primary; when the
+        # surprise is exactly zero, change versus the previous reading still
+        # matters for inflation/growth-style indicators. This is important for
+        # today's UK CPI: 2.9% actual vs 2.9% forecast, but 2.6% previous.
         for event in self._today_releases(news, now):
             c = self._currency(event); surprise = self._surprise(event)
-            if c not in {"GBP", "USD"} or surprise is None: continue
+            if c not in {"GBP", "USD"}: continue
             title = self._text(event).lower()
+            if surprise is None: continue
             if any(x in title for x in self.LOWER_IS_BETTER): surprise = -surprise
+            if abs(surprise) < 0.0001:
+                surprise = self._previous_surprise(event)
+                if surprise is None: continue
             score = max(-2.0, min(2.0, surprise * 1.5 * self._impact(event)))
             if c == "GBP": gbp += score
             else: usd += score
             evidence += 1
-            reasons.append(f"{c} data: {self._text(event) or 'economic release'} (actual {event.get('actual')} vs forecast {event.get('forecast')})")
+            reasons.append(f"{c} data: {self._text(event) or 'economic release'} (actual {event.get('actual')} vs forecast {event.get('forecast')}, previous {event.get('previous')})")
 
+        # 3) Current-day price context, deliberately low weight.
         markets = news.get("markets") or {}
         pair_change = self._change(self._quote(markets, ("GBPUSD", "GBP/USD")))
         dxy_change = self._change(self._quote(markets, ("DXY",)))
         if pair_change is not None: gbp += max(-1, min(1, pair_change / .50)) * .35; evidence += 1; reasons.append(f"GBP/USD today: {pair_change:+.2f}%")
         if dxy_change is not None: usd += max(-1, min(1, dxy_change / .50)) * .35; evidence += 1; reasons.append(f"DXY today: {dxy_change:+.2f}%")
 
-        gbp, usd = max(-5, min(5, gbp)), max(-5, min(5, usd))
-        pair = max(-10, min(10, gbp - usd))
+        gbp, usd = max(-5, min(5, gbp)), max(-5, min(5, usd)); pair = max(-10, min(10, gbp - usd))
+
+        # Upcoming catalysts never create direction.
+        for event in self._upcoming(news)[:3]:
+            c = self._currency(event); minutes = event.get("minutes")
+            if c in {"GBP", "USD"} and isinstance(minutes, (int, float)) and 0 <= minutes <= 180:
+                reasons.append(f"Upcoming {c} catalyst in {int(minutes)}m: {self._text(event) or 'macro event'}")
+
         sessions = {}
         for name in ("Asia", "London", "New York"):
             s = pair
@@ -69,7 +82,8 @@ class TodayOnlyBiasEngine:
     def _today_news(news, now):
         out=[]; seen=set()
         for key in ("headlines", "gbp", "usd"):
-            for item in news.get(key, []) if isinstance(news.get(key, []), list) else []:
+            bucket = news.get(key, [])
+            for item in bucket if isinstance(bucket, list) else []:
                 if not isinstance(item, dict) or not TodayOnlyBiasEngine._today(item, now): continue
                 k=TodayOnlyBiasEngine._text(item).lower()
                 if k and k not in seen: seen.add(k); out.append(item)
@@ -79,10 +93,11 @@ class TodayOnlyBiasEngine:
     def _today_releases(news, now):
         out=[]; seen=set()
         for key in ("recent_events", "events"):
-            for item in news.get(key, []) if isinstance(news.get(key, []), list) else []:
-                if not isinstance(item, dict) or not TodayOnlyBiasEngine._today(item, now) or TodayOnlyBiasEngine._surprise(item) is None: continue
-                k=str(item.get("id") or item.get("title") or "").lower()
-                if k not in seen: seen.add(k); out.append(item)
+            bucket = news.get(key, [])
+            for item in bucket if isinstance(bucket, list) else []:
+                if not isinstance(item, dict) or not TodayOnlyBiasEngine._today(item, now): continue
+                ident=str(item.get("id") or item.get("title") or "").lower()
+                if ident not in seen: seen.add(ident); out.append(item)
         return out
 
     @staticmethod
@@ -127,6 +142,17 @@ class TodayOnlyBiasEngine:
         try: a,f=float(event.get("actual")),float(event.get("forecast"))
         except (TypeError,ValueError): return None
         return None if f==0 else max(-2,min(2,(a-f)/max(abs(f),1)))
+
+    @staticmethod
+    def _previous_surprise(event):
+        try: a,p=float(event.get("actual")),float(event.get("previous"))
+        except (TypeError,ValueError): return None
+        if p == 0: return None
+        return max(-2,min(2,(a-p)/max(abs(p),1)))
+
+    @staticmethod
+    def _upcoming(news):
+        v=news.get("upcoming_events", []); return v if isinstance(v, list) else []
 
     @staticmethod
     def _quote(markets, keys):
