@@ -105,14 +105,8 @@ class PALService:
             macro_data = self.macro_data_service.get_snapshot()
         except Exception as ex:
             print(f"Macro data service failed: {ex}")
-            macro_data = {
-                "source_status": {},
-                "observations": {},
-                "fetched_at": None,
-            }
+            macro_data = {"source_status": {}, "observations": {}, "fetched_at": None}
 
-        # TODAY BIAS is deliberately calculated after live news/data collection.
-        # It is scoped to the current calendar day and session, not a weekly regime.
         try:
             today_bias = self.today_bias_engine.build(
                 macro_bias=macro_bias,
@@ -120,8 +114,7 @@ class PALService:
                 now=current_time,
             )
         except Exception as ex:
-            print(f"Today/session bias engine failed: {ex}
-")
+            print(f"Today/session bias engine failed: {ex}")
             today_bias = {
                 "today": {
                     "bias": "UNKNOWN",
@@ -139,11 +132,7 @@ class PALService:
         news["today_bias"] = today_bias
         news["markets"] = markets
         news["macro_data"] = macro_data
-        news["news_sources"] = {
-            "google_news": len(google_headlines),
-            "gdelt": len(gdelt_headlines),
-            "merged": len(headlines),
-        }
+        news["news_sources"] = {"google_news": len(google_headlines), "gdelt": len(gdelt_headlines), "merged": len(headlines)}
 
         return self.report_engine.build(symbol=symbol, news=news)
 
@@ -152,36 +141,15 @@ class PALService:
         if not isinstance(macro_bias, dict) or not isinstance(headlines, list):
             return macro_bias
 
-        usd_bullish = (
-            "hawkish fed", "hawkish federal reserve", "fed hike", "rate hike bets rise",
-            "higher for longer", "strong us inflation", "hot us inflation", "strong us jobs",
-            "strong payrolls", "strong retail sales", "us growth accelerates",
-        )
-        usd_bearish = (
-            "dovish fed", "dovish federal reserve", "dovish response", "fed hold",
-            "hold interest rates", "rate hike bets fade", "rate cut bets rise", "soft economic data",
-            "unexpected job losses", "weak jobs", "weak payrolls", "weaker retail sales",
-            "lower-than-expected inflation", "mild inflation", "soft us economy",
-        )
-        gbp_bullish = (
-            "hawkish boe", "hawkish bank of england", "boe rate hike", "boe hikes",
-            "uk inflation rises", "uk inflation remains elevated", "strong uk growth",
-            "uk growth accelerates", "uk wages accelerate", "uk employment strengthens",
-        )
-        gbp_bearish = (
-            "dovish boe", "dovish bank of england", "boe rate cut", "boe cuts",
-            "cooling uk labour market", "cooling uk labor market", "uk labour market cool",
-            "uk labor market cool", "vacancies fell", "job vacancies fell", "wage growth slowed",
-            "uk wages slow", "uk employment weakens", "weak uk growth", "uk growth slows",
-            "unemployment rises", "soft labour market", "soft labor market",
-        )
+        usd_bullish = ("hawkish fed", "hawkish federal reserve", "fed hike", "rate hike bets rise", "higher for longer", "strong us inflation", "hot us inflation", "strong us jobs", "strong payrolls", "strong retail sales", "us growth accelerates")
+        usd_bearish = ("dovish fed", "dovish federal reserve", "dovish response", "fed hold", "hold interest rates", "rate hike bets fade", "rate cut bets rise", "soft economic data", "unexpected job losses", "weak jobs", "weak payrolls", "weaker retail sales", "lower-than-expected inflation", "mild inflation", "soft us economy")
+        gbp_bullish = ("hawkish boe", "hawkish bank of england", "boe rate hike", "boe hikes", "uk inflation rises", "uk inflation remains elevated", "strong uk growth", "uk growth accelerates", "uk wages accelerate", "uk employment strengthens")
+        gbp_bearish = ("dovish boe", "dovish bank of england", "boe rate cut", "boe cuts", "cooling uk labour market", "cooling uk labor market", "uk labour market cool", "uk labor market cool", "vacancies fell", "job vacancies fell", "wage growth slowed", "uk wages slow", "uk employment weakens", "weak uk growth", "uk growth slows", "unemployment rises", "soft labour market", "soft labor market")
 
         def score(bucket: str, positive: tuple[str, ...], negative: tuple[str, ...]) -> float:
             total = 0.0
             for item in headlines:
-                if not isinstance(item, dict):
-                    continue
-                if str(item.get("currency", "")).upper() != bucket:
+                if not isinstance(item, dict) or str(item.get("currency", "")).upper() != bucket:
                     continue
                 title = str(item.get("title", "")).lower()
                 source = str(item.get("source", "")).lower()
@@ -206,29 +174,17 @@ class PALService:
         dxy = dict(macro_bias.get("dxy") or {})
         gbp = dict(macro_bias.get("gbp") or {})
         gbpusd = dict(macro_bias.get("gbpusd") or {})
-
         dxy_bias = resolve(dxy.get("bias"), usd_score)
         gbp_bias = resolve(gbp.get("bias"), gbp_score)
         relative_score = gbp_score - usd_score
         gbpusd_bias = resolve(gbpusd.get("bias"), relative_score)
 
-        dxy["bias"] = dxy_bias
-        dxy["bullish"] = dxy_bias == "BULLISH"
-        dxy["bearish"] = dxy_bias == "BEARISH"
-        gbp["bias"] = gbp_bias
-        gbp["bullish"] = gbp_bias == "BULLISH"
-        gbp["bearish"] = gbp_bias == "BEARISH"
-        gbpusd["bias"] = gbpusd_bias
-        gbpusd["bullish"] = gbpusd_bias == "BULLISH"
-        gbpusd["bearish"] = gbpusd_bias == "BEARISH"
-
+        dxy.update({"bias": dxy_bias, "bullish": dxy_bias == "BULLISH", "bearish": dxy_bias == "BEARISH"})
+        gbp.update({"bias": gbp_bias, "bullish": gbp_bias == "BULLISH", "bearish": gbp_bias == "BEARISH"})
+        gbpusd.update({"bias": gbpusd_bias, "bullish": gbpusd_bias == "BULLISH", "bearish": gbpusd_bias == "BEARISH"})
         macro_bias["dxy"] = dxy
         macro_bias["gbp"] = gbp
         macro_bias["gbpusd"] = gbpusd
-        macro_bias["live_news_scores"] = {
-            "usd": round(usd_score, 2),
-            "gbp": round(gbp_score, 2),
-            "gbpusd_relative": round(relative_score, 2),
-        }
+        macro_bias["live_news_scores"] = {"usd": round(usd_score, 2), "gbp": round(gbp_score, 2), "gbpusd_relative": round(relative_score, 2)}
         macro_bias["summary"] = f"USD: {dxy_bias}. GBP: {gbp_bias}. GBP/USD macro bias: {gbpusd_bias}."
         return macro_bias
