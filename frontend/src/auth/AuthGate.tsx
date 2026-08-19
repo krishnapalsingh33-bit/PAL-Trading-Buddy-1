@@ -1,9 +1,11 @@
-import { FormEvent, useEffect, useState } from "react";
-import { GoogleAuthProvider, createUserWithEmailAndPassword, onAuthStateChanged, signInWithEmailAndPassword, signInWithPopup, signOut, User } from "firebase/auth";
+import { useEffect, useState } from "react";
+import type { FormEvent } from "react";
+import { GoogleAuthProvider, createUserWithEmailAndPassword, onAuthStateChanged, signInWithEmailAndPassword, signInWithPopup, User } from "firebase/auth";
+import type { User as FirebaseUser } from "firebase/auth";
 import { auth, firebaseConfigured } from "./firebase";
 
 export default function AuthGate({ children }: { children: React.ReactNode }) {
- const [user,setUser]=useState<User|null>(null); const [loading,setLoading]=useState(true); const [mode,setMode]=useState<"signin"|"signup">("signin"); const [email,setEmail]=useState(""); const [password,setPassword]=useState(""); const [error,setError]=useState(""); const [busy,setBusy]=useState(false);
+ const [user,setUser]=useState<FirebaseUser|null>(null); const [loading,setLoading]=useState(true); const [mode,setMode]=useState<"signin"|"signup">("signin"); const [email,setEmail]=useState(""); const [password,setPassword]=useState(""); const [error,setError]=useState(""); const [busy,setBusy]=useState(false);
  useEffect(()=>{if(!auth){setLoading(false);return}return onAuthStateChanged(auth,u=>{setUser(u);setLoading(false)})},[]);
  if(!firebaseConfigured) return <SetupScreen/>;
  if(loading) return <div className="min-h-screen bg-[#020708] text-white flex items-center justify-center"><div className="text-xs text-zinc-500 animate-pulse">Starting PAL secure session…</div></div>;
