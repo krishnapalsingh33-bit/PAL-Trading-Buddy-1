@@ -2,9 +2,11 @@ import { useEffect, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import {
   GoogleAuthProvider,
+  browserLocalPersistence,
   createUserWithEmailAndPassword,
   getRedirectResult,
   onAuthStateChanged,
+  setPersistence,
   signInWithEmailAndPassword,
   signInWithRedirect,
 } from "firebase/auth";
@@ -34,22 +36,33 @@ export default function AuthGate({ children }: { children: ReactNode }) {
       setLoading(false);
     });
 
-    // Complete a Google redirect sign-in after Firebase sends the user back.
-    getRedirectResult(auth)
-      .then(() => {
-        // onAuthStateChanged is the source of truth for the signed-in user.
-      })
-      .catch((e: any) => {
+    const finishRedirect = async () => {
+      try {
+        // Explicit local persistence keeps the authenticated session across
+        // the full-page Google redirect on production domains.
+        await setPersistence(auth, browserLocalPersistence);
+        const result = await getRedirectResult(auth);
+
         if (!active) return;
+
+        if (result?.user) {
+          setUser(result.user);
+          setError("");
+        }
+      } catch (e: any) {
+        if (!active) return;
+
         setError(
           e?.code === "auth/unauthorized-domain"
             ? "This PAL domain is not authorized in Firebase Authentication."
             : e?.message ?? "Google sign-in failed."
         );
-      })
-      .finally(() => {
+      } finally {
         if (active) setLoading(false);
-      });
+      }
+    };
+
+    void finishRedirect();
 
     return () => {
       active = false;
@@ -78,8 +91,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     setError("");
 
     try {
-      // Redirect avoids browser Cross-Origin-Opener-Policy problems that can
-      // break Firebase signInWithPopup on deployed Vercel domains.
+      await setPersistence(auth, browserLocalPersistence);
       await signInWithRedirect(auth, new GoogleAuthProvider());
     } catch (e: any) {
       setBusy(false);
@@ -99,6 +111,8 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     setError("");
 
     try {
+      await setPersistence(auth, browserLocalPersistence);
+
       if (mode === "signin") {
         await signInWithEmailAndPassword(auth, email, password);
       } else {
@@ -176,6 +190,8 @@ export default function AuthGate({ children }: { children: ReactNode }) {
                 required
                 type="email"
                 autoComplete="email"
+                id="pal-email"
+                name="email"
                 className="mt-2 w-full rounded-xl border border-white/[.08] bg-black/30 px-3 py-3 text-xs text-white outline-none focus:border-cyan-300/30"
                 placeholder="you@example.com"
               />
@@ -189,6 +205,8 @@ export default function AuthGate({ children }: { children: ReactNode }) {
                 required
                 minLength={6}
                 type="password"
+                id="pal-password"
+                name="password"
                 autoComplete={mode === "signin" ? "current-password" : "new-password"}
                 className="mt-2 w-full rounded-xl border border-white/[.08] bg-black/30 px-3 py-3 text-xs text-white outline-none focus:border-cyan-300/30"
                 placeholder="Your PAL password"
