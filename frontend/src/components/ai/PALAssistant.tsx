@@ -19,7 +19,23 @@ export default function PALAssistant({ context, title = "PAL Intelligence", subt
   const [error, setError] = useState("");
   const endRef = useRef<HTMLDivElement | null>(null);
   const tone = ACCENT[accent];
-  const contextPreview = useMemo(() => JSON.stringify(context).slice(0, 28000), [context]);
+
+  // Keep the payload valid JSON. The previous implementation sliced the JSON string
+  // at 28k characters and then JSON.parse()'d the truncated string, which caused the
+  // exact "Unterminated string in JSON" error shown in the assistant panel.
+  const contextPayload = useMemo(() => {
+    const source = context as Record<string, any>;
+    const compact: Record<string, any> = { ...source };
+    if (Array.isArray(compact.news)) compact.news = compact.news.slice(0, 12);
+    if (Array.isArray(compact.journal)) compact.journal = compact.journal.slice(-20);
+    if (Array.isArray(compact.events)) compact.events = compact.events.slice(0, 12);
+    if (compact.macro && typeof compact.macro === "object") {
+      compact.macro = { ...compact.macro };
+      if (Array.isArray(compact.macro.news)) compact.macro.news = compact.macro.news.slice(0, 12);
+      if (Array.isArray(compact.macro.events)) compact.macro.events = compact.macro.events.slice(0, 12);
+    }
+    return compact;
+  }, [context]);
 
   useEffect(() => { if (open) endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, open]);
 
@@ -31,7 +47,7 @@ export default function PALAssistant({ context, title = "PAL Intelligence", subt
     setMessages(nextMessages); setLoading(true);
     try {
       const token = await auth?.currentUser?.getIdToken().catch(() => undefined);
-      const response = await api.post("/pal/assistant", { question: clean, context: JSON.parse(contextPreview), history: nextMessages.slice(-8) }, token ? { headers: { Authorization: `Bearer ${token}` } } : undefined);
+      const response = await api.post("/pal/assistant", { question: clean, context: contextPayload, history: nextMessages.slice(-8) }, token ? { headers: { Authorization: `Bearer ${token}` } } : undefined);
       setMessages((current) => [...current, { role: "assistant", text: String(response.data?.answer ?? "PAL could not produce an answer from the supplied evidence.") }]);
     } catch (err: any) {
       const detail = String(err?.response?.data?.detail ?? err?.message ?? "Assistant unavailable");
