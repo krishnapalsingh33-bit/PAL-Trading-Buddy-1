@@ -28,6 +28,35 @@ export interface MacroBias {
     bearish?: boolean | null;
 }
 
+export interface TodayBiasLayer {
+    bias: string;
+    dxy: MacroBias;
+    gbp: MacroBias;
+    gbpusd: MacroBias;
+    score: number;
+    confidence: number;
+    reasons: string[];
+    evidence_count: number;
+    scope: "TODAY_ONLY" | string;
+    source: string;
+    updated_at: string;
+}
+
+export interface TodaySessionBias {
+    active: boolean;
+    bias: string;
+    score: number;
+    confidence: number;
+    reasons: string[];
+    updated_at: string;
+}
+
+export interface TodayBiasReport {
+    today: TodayBiasLayer;
+    sessions: Record<string, TodaySessionBias>;
+    active_session: string | null;
+}
+
 export interface MacroObservation {
     date?: string | null;
     period?: string | null;
@@ -48,6 +77,8 @@ export interface PALResponse {
     symbol: string;
     timestamp: string;
     report: {
+        // TODAY and MACRO are intentionally separate contracts.
+        today: TodayBiasReport;
         macro: {
             headline: string;
             summary: string;
