@@ -8,6 +8,7 @@ import MacroCalendar from "./pages/MacroCalendar";
 import DailyReports from "./pages/DailyReports";
 import PalPageShell from "./components/layout/PalPageShell";
 import type { Page } from "./components/layout/Sidebar";
+import "./styles/pal-reference.css";
 
 type AppPage = Page;
 
@@ -41,7 +42,7 @@ function App() {
     if (page === "macro-view") return <MacroViewPremium onPageChange={navigate} />;
     if (page === "macro-calendar") return <MacroCalendar onPageChange={navigate} />;
     if (page === "reports") return <DailyReports onPageChange={navigate} />;
-    return <DashboardReference />;
+    return <div className="pal-dashboard"><DashboardReference /></div>;
 }
 
 export default App;
