@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
-import type { FormEvent } from "react";
-import { GoogleAuthProvider, createUserWithEmailAndPassword, onAuthStateChanged, signInWithEmailAndPassword, signInWithPopup, User } from "firebase/auth";
+import type { FormEvent, ReactNode } from "react";
+import { GoogleAuthProvider, createUserWithEmailAndPassword, onAuthStateChanged, signInWithEmailAndPassword, signInWithPopup } from "firebase/auth";
 import type { User as FirebaseUser } from "firebase/auth";
 import { auth, firebaseConfigured } from "./firebase";
 
-export default function AuthGate({ children }: { children: React.ReactNode }) {
+export default function AuthGate({ children }: { children: ReactNode }) {
  const [user,setUser]=useState<FirebaseUser|null>(null); const [loading,setLoading]=useState(true); const [mode,setMode]=useState<"signin"|"signup">("signin"); const [email,setEmail]=useState(""); const [password,setPassword]=useState(""); const [error,setError]=useState(""); const [busy,setBusy]=useState(false);
  useEffect(()=>{if(!auth){setLoading(false);return}return onAuthStateChanged(auth,u=>{setUser(u);setLoading(false)})},[]);
  if(!firebaseConfigured) return <SetupScreen/>;
