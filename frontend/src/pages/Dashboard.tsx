@@ -1,1654 +1,246 @@
 import { useEffect, useMemo, useState } from "react";
-
 import Sidebar from "../components/layout/Sidebar";
 import { usePAL } from "../hooks/usePAL";
 
-
-type NewsItem = {
-    title?: string;
-    time?: string;
-    minutes?: number;
-};
-
-
-function formatClock(date: Date) {
-    return date.toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-        hour12: false,
-    });
+function clock(date: Date) {
+    return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
 }
 
-
-function formatDate(date: Date) {
-    return date.toLocaleDateString([], {
-        weekday: "long",
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-    });
+function dateLabel(date: Date) {
+    return date.toLocaleDateString([], { day: "2-digit", month: "short", year: "numeric" }).toUpperCase();
 }
-
 
 function normalizeBias(value: unknown) {
-    const bias = String(value ?? "").toUpperCase();
+    const v = String(value ?? "").toUpperCase();
+    if (v.includes("BULL")) return "BULLISH";
+    if (v.includes("BEAR")) return "BEARISH";
+    if (v.includes("NEUTRAL")) return "NEUTRAL";
+    if (!v) return "UNKNOWN";
+    return v;
+}
 
-    if (bias.includes("BULL")) {
-        return "BULLISH";
+function biasTone(bias: string) {
+    if (bias === "BULLISH") return "text-emerald-300 border-emerald-300/20 bg-emerald-300/10";
+    if (bias === "BEARISH") return "text-red-300 border-red-300/20 bg-red-300/10";
+    if (bias === "NEUTRAL") return "text-amber-300 border-amber-300/20 bg-amber-300/10";
+    return "text-zinc-400 border-zinc-700/60 bg-zinc-800/30";
+}
+
+function valueNumber(value: unknown, digits = 2) {
+    if (typeof value === "number" && Number.isFinite(value)) {
+        return value.toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits });
     }
-
-    if (bias.includes("BEAR")) {
-        return "BEARISH";
-    }
-
-    return "NEUTRAL";
+    if (typeof value === "string" && value.trim()) return value;
+    return "—";
 }
 
-
-function biasClasses(bias: string) {
-    if (bias === "BULLISH") {
-        return {
-            text: "text-emerald-300",
-            soft: "bg-emerald-400/10",
-            border: "border-emerald-400/20",
-            dot: "bg-emerald-400",
-        };
-    }
-
-    if (bias === "BEARISH") {
-        return {
-            text: "text-red-300",
-            soft: "bg-red-400/10",
-            border: "border-red-400/20",
-            dot: "bg-red-400",
-        };
-    }
-
-    return {
-        text: "text-zinc-300",
-        soft: "bg-zinc-400/10",
-        border: "border-zinc-400/20",
-        dot: "bg-zinc-400",
-    };
+function percent(value: unknown) {
+    if (typeof value === "number" && Number.isFinite(value)) return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
+    if (typeof value === "string" && value.trim()) return value;
+    return "—";
 }
 
-
-const STRATEGY_LANGUAGE = /\b(?:cisd|fvg|fair value gap|displacement|liquidity sweep|liquidity sweeps|liquidity|manipulation|premium\s*\/\s*discount|premium-discount|delivery|trade allowed|ready for entry|entry model|execution model|execution setup|workflow stage|wait[_ -]?(?:structure|liquidity|manipulation|displacement|delivery|cisd|fvg|premium|discount))\b/i;
-
-function macroOnlyText(
-    value: unknown,
-    fallback: string,
-) {
-    const text = String(value ?? "").trim();
-
-    if (!text || STRATEGY_LANGUAGE.test(text)) {
-        return fallback;
-    }
-
-    return text;
+function quoteStatus(status: string | undefined) {
+    const s = String(status ?? "UNAVAILABLE").toUpperCase();
+    if (s === "CURRENT" || s === "LIVE") return "LIVE";
+    if (s === "RECENT") return "RECENT";
+    if (s === "STALE") return "STALE";
+    return "UNAVAILABLE";
 }
 
-
-function Panel({
-    children,
-    className = "",
-}: {
-    children: React.ReactNode;
-    className?: string;
-}) {
-    return (
-        <section
-            className={`relative overflow-hidden rounded-2xl border border-white/[0.09] bg-gradient-to-br from-white/[0.055] via-white/[0.025] to-transparent shadow-[0_30px_90px_-55px_rgba(0,0,0,0.98)] backdrop-blur-2xl ${className}`}
-        >
-            {children}
-        </section>
-    );
-}
-
-
-function SectionHeading({
-    eyebrow,
-    title,
-    description,
-}: {
-    eyebrow: string;
-    title: string;
-    description?: string;
-}) {
-    return (
-        <div>
-            <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-zinc-600">
-                {eyebrow}
-            </div>
-
-            <h2 className="mt-2 text-lg font-semibold tracking-tight text-white">
-                {title}
-            </h2>
-
-            {description ? (
-                <p className="mt-1 text-xs leading-5 text-zinc-500">
-                    {description}
-                </p>
-            ) : null}
-        </div>
-    );
-}
-
-
-function SessionPill({
-    name,
-    status,
-}: {
-    name: string;
-    status: string;
-}) {
-    const active = status === "OPEN";
-
-    return (
-        <div className="flex min-w-[118px] items-center gap-2 rounded-xl border border-white/[0.06] bg-black/20 px-3 py-2">
-            <span
-                className={`h-1.5 w-1.5 rounded-full ${
-                    active
-                        ? "bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.8)]"
-                        : "bg-zinc-700"
-                }`}
-            />
-
-            <div>
-                <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-300">
-                    {name}
-                </div>
-
-                <div
-                    className={`text-[9px] uppercase tracking-wider ${
-                        active
-                            ? "text-emerald-400"
-                            : "text-zinc-600"
-                    }`}
-                >
-                    {status}
-                </div>
-            </div>
-        </div>
-    );
-}
-
-
-
-
-function GlowDot({
-    tone = "emerald",
-}: {
-    tone?: "emerald" | "red" | "amber" | "cyan";
-}) {
-    const classes = {
-        emerald:
-            "bg-emerald-400 shadow-[0_0_14px_rgba(52,211,153,0.9)]",
-        red:
-            "bg-red-400 shadow-[0_0_14px_rgba(248,113,113,0.85)]",
-        amber:
-            "bg-amber-300 shadow-[0_0_14px_rgba(252,211,77,0.75)]",
-        cyan:
-            "bg-cyan-300 shadow-[0_0_14px_rgba(103,232,249,0.75)]",
-    };
-
-    return (
-        <span
-            className={`inline-block h-1.5 w-1.5 rounded-full ${classes[tone]}`}
-        />
-    );
-}
-
-
-
-function DecorativeGrid() {
-    return (
-        <div className="pointer-events-none absolute inset-0 opacity-40">
-            <div
-                className="absolute inset-0"
-                style={{
-                    backgroundImage:
-                        "linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px)",
-                    backgroundSize: "38px 38px",
-                    maskImage:
-                        "linear-gradient(to bottom, black, transparent 78%)",
-                    WebkitMaskImage:
-                        "linear-gradient(to bottom, black, transparent 78%)",
-                }}
-            />
-        </div>
-    );
-}
-
-
-function ProbabilityRing({
-    value,
-    tone,
-}: {
-    value: number;
-    tone: "emerald" | "red" | "neutral";
-}) {
-    const stroke =
-        tone === "emerald"
-            ? "#34d399"
-            : tone === "red"
-              ? "#f87171"
-              : "#71717a";
-
-    const radius = 26;
-    const circumference = 2 * Math.PI * radius;
-    const dash = Math.max(
-        0,
-        Math.min(100, value),
-    );
-
-    return (
-        <div className="relative h-16 w-16 shrink-0">
-            <svg
-                viewBox="0 0 64 64"
-                className="-rotate-90 h-16 w-16"
-            >
-                <circle
-                    cx="32"
-                    cy="32"
-                    r={radius}
-                    fill="none"
-                    stroke="rgba(255,255,255,0.06)"
-                    strokeWidth="5"
-                />
-
-                <circle
-                    cx="32"
-                    cy="32"
-                    r={radius}
-                    fill="none"
-                    stroke={stroke}
-                    strokeWidth="5"
-                    strokeLinecap="round"
-                    strokeDasharray={`${(dash / 100) * circumference} ${circumference}`}
-                />
-            </svg>
-
-            <div className="absolute inset-0 flex items-center justify-center">
-                <span className="text-xs font-semibold text-white">
-                    {Math.round(value)}%
-                </span>
-            </div>
-        </div>
-    );
-}
-
-
-function DashboardSkeleton() {
-    return (
-        <div className="min-h-screen bg-[#050607] text-white">
-            <div className="flex min-h-screen">
-                <div className="hidden w-20 border-r border-white/[0.06] bg-black/20 lg:block" />
-
-                <main className="min-w-0 flex-1 p-5 sm:p-7 lg:p-9">
-                    <div className="mx-auto max-w-[1500px] animate-pulse">
-                        <div className="h-24 rounded-2xl bg-white/[0.035]" />
-
-                        <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                            {Array.from({ length: 4 }).map((_, index) => (
-                                <div
-                                    key={index}
-                                    className="h-20 rounded-xl bg-white/[0.03]"
-                                />
-                            ))}
-                        </div>
-
-                        <div className="mt-5 grid gap-5 xl:grid-cols-[1.65fr_0.95fr]">
-                            <div className="h-[430px] rounded-2xl bg-white/[0.03]" />
-                            <div className="h-[430px] rounded-2xl bg-white/[0.03]" />
-                        </div>
-
-                        <div className="mt-5 grid gap-5 lg:grid-cols-2">
-                            <div className="h-64 rounded-2xl bg-white/[0.03]" />
-                            <div className="h-64 rounded-2xl bg-white/[0.03]" />
-                        </div>
-                    </div>
-                </main>
-            </div>
-        </div>
-    );
-}
-
-
-
-
-type MacroMarketFeed = {
-    symbol?: string;
-    label?: string;
-    price?: number | string | null;
-    change?: number | string | null;
-    change_pct?: number | string | null;
-    percent_change?: number | string | null;
-    bias?: string | null;
-    confidence?: number | null;
-    reason?: string | null;
-    status?: string | null;
-};
-
-function readMacroMarket(
-    source: any,
-    keys: string[],
-): MacroMarketFeed {
-    if (!source) {
-        return {};
-    }
-
-    if (Array.isArray(source)) {
-        const match = source.find((item) => {
-            const value = String(
-                item?.symbol ?? item?.ticker ?? item?.label ?? "",
-            ).toUpperCase();
-
-            return keys.some((key) =>
-                value === key.toUpperCase(),
-            );
-        });
-
-        return match ?? {};
-    }
-
+function findMarket(markets: Record<string, any> | undefined, keys: string[]) {
+    if (!markets) return undefined;
+    const entries = Object.entries(markets);
     for (const key of keys) {
-        const direct = source?.[key];
-
-        if (direct && typeof direct === "object") {
-            return direct;
-        }
+        const exact = markets[key];
+        if (exact) return exact;
+        const found = entries.find(([name, item]) => String(name).toUpperCase() === key.toUpperCase() || String(item?.symbol ?? "").toUpperCase() === key.toUpperCase());
+        if (found) return found[1];
     }
-
-    return {};
+    return undefined;
 }
 
-function displayMarketNumber(
-    value: unknown,
-    digits = 2,
-) {
-    if (typeof value === "number" && Number.isFinite(value)) {
-        return value.toLocaleString(undefined, {
-            minimumFractionDigits: digits,
-            maximumFractionDigits: digits,
-        });
-    }
-
-    if (typeof value === "string" && value.trim()) {
-        return value;
-    }
-
-    return "—";
-}
-
-function displayMarketChange(value: unknown) {
-    if (typeof value === "number" && Number.isFinite(value)) {
-        const sign = value > 0 ? "+" : "";
-        return `${sign}${value.toFixed(2)}%`;
-    }
-
-    if (typeof value === "string" && value.trim()) {
-        return value;
-    }
-
-    return "—";
-}
-
-function MacroDeskCard({
-    label,
-    subtitle,
-    market,
-    fallbackBias = "NEUTRAL",
-    accent = "cyan",
-}: {
-    label: string;
-    subtitle: string;
-    market: MacroMarketFeed;
-    fallbackBias?: string;
-    accent?: "emerald" | "red" | "amber" | "cyan";
-}) {
-    const bias = normalizeBias(
-        market.bias ?? fallbackBias,
-    );
-
-    const change =
-        market.change_pct ?? market.percent_change ?? market.change;
-
-    const hasPrice =
-        market.price !== undefined &&
-        market.price !== null &&
-        String(market.price).trim() !== "";
-
-    const hasChange =
-        change !== undefined &&
-        change !== null &&
-        String(change).trim() !== "";
-
-    const palette = {
-        emerald: {
-            glow: "bg-emerald-400",
-            soft: "bg-emerald-400/[0.07]",
-            border: "border-emerald-400/10",
-            text: "text-emerald-300",
-        },
-        red: {
-            glow: "bg-red-400",
-            soft: "bg-red-400/[0.07]",
-            border: "border-red-400/10",
-            text: "text-red-300",
-        },
-        amber: {
-            glow: "bg-amber-300",
-            soft: "bg-amber-300/[0.07]",
-            border: "border-amber-300/10",
-            text: "text-amber-300",
-        },
-        cyan: {
-            glow: "bg-cyan-300",
-            soft: "bg-cyan-300/[0.07]",
-            border: "border-cyan-300/10",
-            text: "text-cyan-300",
-        },
-    }[accent];
-
-    const biasTone = biasClasses(bias);
-
+function GlowLine({ tone = "cyan" }: { tone?: "cyan" | "green" | "amber" | "red" }) {
+    const stroke = tone === "green" ? "#19e6a1" : tone === "amber" ? "#f7c948" : tone === "red" ? "#ff5f61" : "#19d9ff";
     return (
-        <div className="group relative overflow-hidden rounded-2xl border border-white/[0.07] bg-gradient-to-br from-white/[0.045] via-white/[0.02] to-black/20 p-4 shadow-inner shadow-white/[0.02] transition duration-300 hover:-translate-y-0.5 hover:border-white/[0.13]">
-            <div
-                className={`pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full ${palette.glow} opacity-10 blur-3xl transition duration-300 group-hover:opacity-20`}
-            />
+        <svg viewBox="0 0 180 54" className="absolute inset-x-0 bottom-0 h-14 w-full opacity-75" preserveAspectRatio="none" aria-hidden="true">
+            <defs>
+                <linearGradient id={`g-${tone}`} x1="0" x2="1">
+                    <stop offset="0" stopColor={stroke} stopOpacity="0" />
+                    <stop offset="0.5" stopColor={stroke} stopOpacity="0.65" />
+                    <stop offset="1" stopColor={stroke} stopOpacity="0.1" />
+                </linearGradient>
+            </defs>
+            <path d="M0 44 L14 41 L24 43 L35 31 L45 36 L57 29 L67 34 L79 24 L91 28 L104 18 L114 27 L128 15 L139 20 L151 11 L163 18 L180 8" fill="none" stroke={`url(#g-${tone})`} strokeWidth="1.4" className="pal-drift" />
+        </svg>
+    );
+}
 
-            <div className="relative flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                        <span
-                            className={`h-1.5 w-1.5 rounded-full ${palette.glow} shadow-[0_0_12px_currentColor]`}
-                        />
-                        <span className="text-sm font-semibold tracking-tight text-white">
-                            {label}
-                        </span>
-                    </div>
+function LivePulse() {
+    return <span className="relative inline-flex h-2 w-2"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400/70" /><span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,.9)]" /></span>;
+}
 
-                    <div className="mt-1 truncate text-[9px] uppercase tracking-[0.15em] text-zinc-600">
-                        {subtitle}
-                    </div>
-                </div>
-
-                <span
-                    className={`shrink-0 rounded-lg border px-2 py-1 text-[8px] font-semibold uppercase tracking-[0.13em] ${biasTone.border} ${biasTone.soft} ${biasTone.text}`}
-                >
-                    {bias}
-                </span>
-            </div>
-
-            <div className="relative mt-5 flex items-end justify-between gap-3">
-                <div>
-                    <div className="text-xl font-semibold tracking-tight text-white">
-                        {hasChange
-    ? displayMarketChange(change)
-    : "Fundamental macro bias"}
-                    </div>
-
-                    <div
-                        className={`mt-1 text-[10px] font-medium ${
-                            hasChange
-                                ? changeValueClass(change)
-                                : bias === "BULLISH"
-                                  ? "text-emerald-300"
-                                  : bias === "BEARISH"
-                                    ? "text-red-300"
-                                    : "text-zinc-500"
-                        }`}
-                    >
-                        {hasChange
-                            ? displayMarketChange(change)
-                            : `${bias} fundamental bias`}
-                    </div>
-                </div>
-
-                <div className="text-right">
-                    {typeof market.confidence === "number" ? (
-                        <>
-                            <div className="text-[9px] uppercase tracking-[0.13em] text-zinc-700">
-                                Confidence
-                            </div>
-                            <div className={`mt-1 text-sm font-semibold ${palette.text}`}>
-                                {Math.round(market.confidence)}%
-                            </div>
-                        </>
-                    ) : (
-                        <div className="text-[9px] uppercase tracking-[0.13em] text-zinc-500">
-                            Macro bias
-                        </div>
-                    )}
-                </div>
-            </div>
-
-            <div className="relative mt-4 h-1 overflow-hidden rounded-full bg-white/[0.05]">
-                <div
-                    className={`h-full rounded-full ${palette.glow} opacity-60`}
-                    style={{
-                        width: `${
-                            typeof market.confidence === "number"
-                                ? Math.min(Math.max(market.confidence, 6), 100)
-                                : bias === "NEUTRAL"
-                                  ? 18
-                                  : 38
-                        }%`,
-                    }}
-                />
-            </div>
-
-            <div className="relative mt-3 min-h-[36px] text-[10px] leading-5 text-zinc-600">
-                {macroOnlyText(
-                    market.reason,
-                    hasPrice
-                        ? "Live market data supplied by the macro feed."
-                        : "Fundamental direction supplied by PAL macro intelligence. Live price data is not currently connected.",
-                )}
-            </div>
+function Session({ name, open }: { name: string; open: boolean }) {
+    return (
+        <div className="min-w-[88px] rounded-xl border border-white/[0.07] bg-black/20 px-3 py-2.5 backdrop-blur-xl">
+            <div className="flex items-center gap-2 text-[10px] font-semibold tracking-[0.08em] text-zinc-200"><span className={`h-1.5 w-1.5 rounded-full ${open ? "bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,.9)]" : "bg-zinc-700"}`} />{name}</div>
+            <div className={`mt-0.5 text-[9px] font-semibold tracking-wider ${open ? "text-emerald-400" : "text-zinc-600"}`}>{open ? "OPEN" : "CLOSED"}</div>
         </div>
     );
 }
 
-function changeValueClass(value: unknown) {
-    const numeric =
-        typeof value === "number"
-            ? value
-            : Number.parseFloat(String(value));
-
-    if (Number.isFinite(numeric)) {
-        if (numeric > 0) return "text-emerald-300";
-        if (numeric < 0) return "text-red-300";
-    }
-
-    return "text-zinc-400";
+function sessions(now: Date) {
+    const h = now.getUTCHours() + now.getUTCMinutes() / 60;
+    return {
+        london: h >= 7 && h < 16,
+        newYork: h >= 12 && h < 21,
+        sydney: h >= 21 || h < 6,
+        asia: h >= 0 && h < 9,
+    };
 }
 
-
-function Dashboard({
-    activePage = "dashboard",
-    onPageChange,
-}: {
-    activePage?: "dashboard" | "journal";
-    onPageChange?: (nextPage: "dashboard" | "journal") => void;
-}) {
-    const { data, isLoading, error } = usePAL();
-
-    const [clock, setClock] = useState(
-        () => new Date(),
+function MarketCard({ label, quote, accent, digits = 2 }: { label: string; quote: any; accent: "cyan" | "green" | "amber" | "red"; digits?: number }) {
+    const status = quoteStatus(quote?.status);
+    const accentClass = accent === "green" ? "text-emerald-300" : accent === "amber" ? "text-amber-300" : accent === "red" ? "text-red-300" : "text-cyan-300";
+    const lineTone = accent === "green" ? "green" : accent === "amber" ? "amber" : accent === "red" ? "red" : "cyan";
+    const change = quote?.change_percent;
+    const changeClass = typeof change === "number" ? (change >= 0 ? "text-emerald-400" : "text-red-400") : "text-zinc-600";
+    return (
+        <article className="group relative min-w-0 overflow-hidden rounded-2xl border border-white/[0.075] bg-[#071019]/80 px-4 pb-4 pt-3 shadow-[inset_0_1px_0_rgba(255,255,255,.025)] transition duration-300 hover:-translate-y-0.5 hover:border-cyan-300/20 hover:bg-[#09131d]">
+            <div className="flex items-center justify-between">
+                <span className="text-sm font-semibold text-white">{label}</span>
+                <span className={`text-[9px] font-semibold ${status === "LIVE" ? "text-emerald-300" : status === "RECENT" ? "text-amber-300" : "text-zinc-600"}`}>{status}</span>
+            </div>
+            <div className="mt-3 text-2xl font-semibold tracking-tight text-white">{valueNumber(quote?.price, digits)}</div>
+            <div className={`mt-1 text-sm font-semibold ${changeClass}`}>{percent(change)}</div>
+            <div className="mt-2 text-[8px] text-zinc-600">{quote?.source ?? "Provider unavailable"}{quote?.timestamp ? `  ·  ${new Date(quote.timestamp).toLocaleString()}` : ""}</div>
+            <GlowLine tone={lineTone} />
+            <div className={`pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-current opacity-[0.045] blur-3xl ${accentClass}`} />
+        </article>
     );
+}
+
+function StatusStrip({ label, bias }: { label: string; bias: string }) {
+    return (
+        <div className="flex items-center justify-between border-r border-white/[0.07] px-5 py-3 last:border-r-0">
+            <div className="flex items-center gap-3"><span className="flex h-6 w-6 items-center justify-center rounded-lg border border-cyan-300/15 bg-cyan-300/5 text-[10px] text-cyan-300">◉</span><span className="text-[10px] uppercase tracking-[0.15em] text-zinc-500">{label}</span></div>
+            <span className={`rounded-lg border px-2.5 py-1 text-[9px] font-bold ${biasTone(bias)}`}>{bias}</span>
+        </div>
+    );
+}
+
+function AppStyles() {
+    return <style>{`@keyframes palDrift {0%{transform:translateX(-7px)}50%{transform:translateX(5px)}100%{transform:translateX(-7px)}} .pal-drift{animation:palDrift 7s ease-in-out infinite} @keyframes palFloat{0%,100%{transform:translate3d(0,0,0)}50%{transform:translate3d(0,-5px,0)}} .pal-float{animation:palFloat 5s ease-in-out infinite} @keyframes palScan{0%{transform:translateX(-100%);opacity:0}25%{opacity:.35}70%{opacity:.1}100%{transform:translateX(160%);opacity:0}} .pal-scan{animation:palScan 8s linear infinite} @keyframes palGlow{0%,100%{opacity:.25}50%{opacity:.55}} .pal-glow{animation:palGlow 4s ease-in-out infinite}`}</style>;
+}
+
+export default function Dashboard() {
+    const { data, isLoading, isError } = usePAL();
+    const [now, setNow] = useState(() => new Date());
 
     useEffect(() => {
-        const timer = window.setInterval(() => {
-            setClock(new Date());
-        }, 1000);
-
-        return () => {
-            window.clearInterval(timer);
-        };
+        const timer = window.setInterval(() => setNow(new Date()), 1000);
+        return () => window.clearInterval(timer);
     }, []);
 
-    const sessionStatus = useMemo(() => {
-        const hour = clock.getUTCHours();
+    const report = data?.report;
+    const macro = report?.macro;
+    const markets = macro?.markets;
+    const session = useMemo(() => sessions(now), [now]);
 
-        return {
-            london:
-                hour >= 7 && hour < 16
-                    ? "OPEN"
-                    : "CLOSED",
-            newYork:
-                hour >= 13 && hour < 22
-                    ? "OPEN"
-                    : "CLOSED",
-            asia:
-                hour >= 0 && hour < 9
-                    ? "OPEN"
-                    : "CLOSED",
-            sydney:
-                hour >= 21 || hour < 6
-                    ? "OPEN"
-                    : "CLOSED",
-        };
-    }, [clock]);
+    const dxy = findMarket(markets, ["DXY", "DX-Y.NYB"]);
+    const gbpusd = findMarket(markets, ["GBPUSD", "GBP/USD"]);
+    const gold = findMarket(markets, ["GOLD", "XAUUSD", "GC=F"]);
+    const wti = findMarket(markets, ["WTI", "CL=F", "USOIL"]);
+    const us10y = findMarket(markets, ["US10Y", "^TNX", "10Y"]);
+    const us500 = findMarket(markets, ["US500", "^GSPC", "SPX"]);
 
-    if (isLoading) {
-        return <DashboardSkeleton />;
-    }
+    const dxyBias = normalizeBias(macro?.dxy?.bias);
+    const gbpBias = normalizeBias(macro?.gbp?.bias);
+    const pairBias = normalizeBias(macro?.gbpusd?.bias);
+    const observations = [dxy, gbpusd, gold, wti, us10y, us500];
+    const liveCount = observations.filter((q) => quoteStatus(q?.status) === "LIVE").length;
+    const openSessions = Object.values(session).filter(Boolean).length;
+    const integrity = isError ? "UNAVAILABLE" : liveCount > 0 ? "VERIFIED" : "CHECKING";
 
-    if (error) {
-        return (
-            <div className="flex min-h-screen items-center justify-center bg-[#050607] p-6 text-white">
-                <Panel className="w-full max-w-md p-8 text-center">
-                    <div className="text-xs font-semibold uppercase tracking-[0.2em] text-red-400">
-                        Connection
-                    </div>
+    const headline = macro?.headline || "Macro intelligence is waiting for current provider evidence.";
+    const summary = macro?.summary || "No additional macro summary is available from the current provider response.";
+    const reason = macro?.bias_summary || "No directional macro conclusion is available yet.";
 
-                    <h1 className="mt-3 text-2xl font-semibold">
-                        Market data unavailable
-                    </h1>
-
-                    <p className="mt-2 text-sm leading-6 text-zinc-500">
-                        PAL could not load the current market
-                        report. Check that the backend is running.
-                    </p>
-
-                    <button
-                        type="button"
-                        onClick={() =>
-                            window.location.reload()
-                        }
-                        className="mt-6 rounded-xl border border-emerald-400/20 bg-emerald-400/10 px-5 py-2.5 text-sm font-semibold text-emerald-300 transition hover:bg-emerald-400/15"
-                    >
-                        Retry
-                    </button>
-                </Panel>
-            </div>
-        );
-    }
-
-    if (!data || !data.report) {
-        return (
-            <div className="flex min-h-screen items-center justify-center bg-[#050607] p-6 text-white">
-                <Panel className="w-full max-w-md p-8 text-center">
-                    <div className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-600">
-                        Market Intelligence
-                    </div>
-
-                    <h1 className="mt-3 text-2xl font-semibold">
-                        No briefing available
-                    </h1>
-
-                    <p className="mt-2 text-sm text-zinc-500">
-                        The dashboard is ready, but the current
-                        market feed has not returned a report yet.
-                    </p>
-                </Panel>
-            </div>
-        );
-    }
-
-    const report = data.report as any;
-
-    const symbol =
-        String(data.symbol ?? "GBP/USD");
-
-    // ==========================================================
-    // MACRO DATA
-    // ==========================================================
-
-    const macro =
-        report.macro ?? {};
-
-    // ==========================================================
-    // MACRO BIAS
-    // ==========================================================
-    // The backend exposes the current fundamental bias under
-    // report.macro. Keep legacy fallbacks for compatibility.
-
-    const dxyBias = normalizeBias(
-        macro?.dxy?.bias ??
-            report.dxy?.trend ??
-            report.summary?.dxy?.trend,
-    );
-
-    const gbpBias = normalizeBias(
-        macro?.gbp?.bias,
-    );
-
-    const gbpUsdBias = normalizeBias(
-        macro?.gbpusd?.bias ??
-            report.pal?.overall_bias,
-    );
-
-    const marketHealth =
-        String(
-            report.market_health?.status ??
-                report.summary?.market?.health ??
-                "UNKNOWN",
-        ).toUpperCase();
-
-    const newsSummary =
-        String(
-            report.news?.summary ??
-                "No high-impact news summary available.",
-        );
-
-    const newsWarnings = Array.isArray(
-        report.news?.warnings,
-    )
-        ? report.news.warnings
-        : [];
-
-    const highImpact: NewsItem[] =
-        Array.isArray(report.news?.high_impact)
-            ? report.news.high_impact
-            : [];
-
-    const marketFeed =
-        macro?.markets ??
-        macro?.market_data ??
-        report?.markets ??
-        report?.market_data ??
-        {};
-
-    const macroDesk = [
-        {
-            label: "DXY",
-            subtitle: "US dollar index",
-            keys: ["DXY"],
-            fallbackBias: dxyBias,
-            accent: dxyBias === "BEARISH" ? "red" : "cyan",
-        },
-        {
-            label: "GBP/USD",
-            subtitle: "Sterling vs dollar",
-            keys: ["GBPUSD", "GBP/USD"],
-            fallbackBias: gbpUsdBias,
-            accent: gbpUsdBias === "BULLISH" ? "emerald" : "red",
-        },
-        {
-            label: "Gold",
-            subtitle: "XAU/USD",
-            keys: ["XAUUSD", "GOLD", "XAU/USD"],
-            fallbackBias: "NEUTRAL",
-            accent: "amber",
-        },
-        {
-            label: "Oil",
-            subtitle: "WTI / crude",
-            keys: ["USOIL", "WTI", "OIL", "XTIUSD"],
-            fallbackBias: "NEUTRAL",
-            accent: "amber",
-        },
-        {
-            label: "US 10Y",
-            subtitle: "Treasury yield",
-            keys: ["US10Y", "10Y", "TNX"],
-            fallbackBias: "NEUTRAL",
-            accent: "cyan",
-        },
-        {
-            label: "US500",
-            subtitle: "US equity index",
-            keys: ["US500", "SPX", "SP500"],
-            fallbackBias: "NEUTRAL",
-            accent: "emerald",
-        },
-    ].map((item) => ({
-        ...item,
-        market: readMacroMarket(marketFeed, item.keys),
-    }));
-
-    const hasMacroProbabilities =
-        typeof macro?.dxy?.bullish === "number" ||
-        typeof macro?.gbp?.bullish === "number" ||
-        typeof macro?.gbpusd?.bullish === "number";
-
-    const briefingSummary = macroOnlyText(
-        macro?.summary ?? macro?.description,
-        "The latest fundamental market picture is being monitored by PAL.",
-    );
-
-    const briefingHeadline = macroOnlyText(
-        macro?.headline,
-        "The market picture, distilled into clarity.",
-    );
-
-    const mainRisk = macroOnlyText(
-        macro?.main_risk ?? newsWarnings[0],
-        "No major market risk flag supplied by the current feed.",
-    );
-
-    const macroEvents: NewsItem[] =
-        Array.isArray(macro?.events)
-            ? macro.events
-            : highImpact;
-
-    const confidence =
-        typeof macro?.confidence === "number"
-            ? macro.confidence
-            : null;
-
-    const probabilityCards = [
-        {
-            label: "DXY",
-            bullish:
-                typeof macro?.dxy?.bullish ===
-                "number"
-                    ? macro.dxy.bullish
-                    : null,
-            bearish:
-                typeof macro?.dxy?.bearish ===
-                "number"
-                    ? macro.dxy.bearish
-                    : null,
-            bias: dxyBias,
-        },
-        {
-            label: "GBP",
-            bullish:
-                typeof macro?.gbp?.bullish ===
-                "number"
-                    ? macro.gbp.bullish
-                    : null,
-            bearish:
-                typeof macro?.gbp?.bearish ===
-                "number"
-                    ? macro.gbp.bearish
-                    : null,
-            bias: normalizeBias(
-                macro?.gbp?.bias ??
-                    report.pal?.overall_bias,
-            ),
-        },
-        {
-            label: "GBP/USD",
-            bullish:
-                typeof macro?.gbpusd?.bullish ===
-                "number"
-                    ? macro.gbpusd.bullish
-                    : null,
-            bearish:
-                typeof macro?.gbpusd?.bearish ===
-                "number"
-                    ? macro.gbpusd.bearish
-                    : null,
-            bias: gbpUsdBias,
-        },
-    ];
+    if (isLoading && !data) return <div className="min-h-screen bg-[#02070d]" />;
 
     return (
-        <div className="relative min-h-screen overflow-hidden bg-[#050607] text-zinc-100">
-            <div className="pointer-events-none fixed inset-0 -z-10">
-                <div className="absolute left-1/2 top-[-22rem] h-[42rem] w-[68rem] -translate-x-1/2 rounded-full bg-emerald-500/[0.045] blur-3xl" />
-                <div className="absolute right-[-14rem] top-1/3 h-[32rem] w-[32rem] rounded-full bg-cyan-500/[0.035] blur-3xl" />
-                <div className="absolute bottom-[-16rem] left-[-12rem] h-[34rem] w-[34rem] rounded-full bg-indigo-500/[0.03] blur-3xl" />
-            </div>
+        <div className="min-h-screen overflow-x-hidden bg-[#02070d] text-white selection:bg-cyan-300/20">
+            <AppStyles />
+            <div className="relative flex min-h-screen">
+                <div className="pointer-events-none fixed inset-0 overflow-hidden">
+                    <div className="absolute -left-32 top-20 h-96 w-96 rounded-full bg-cyan-500/[0.06] blur-[120px] pal-glow" />
+                    <div className="absolute right-0 top-32 h-[32rem] w-[32rem] rounded-full bg-emerald-400/[0.045] blur-[140px] pal-glow" />
+                    <div className="absolute bottom-0 left-1/3 h-80 w-80 rounded-full bg-blue-500/[0.035] blur-[120px]" />
+                </div>
 
-            <div className="flex min-h-screen">
-                <Sidebar
-                    symbol={symbol}
-                    activePage={activePage}
-                    onPageChange={onPageChange}
-                />
+                <Sidebar symbol="GBPUSD" activePage="dashboard" />
 
-                <main className="min-w-0 flex-1 overflow-y-auto">
-                    <div className="mx-auto max-w-[1500px] px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
-                        {/* TOP COMMAND BAR */}
-                        <div className="relative overflow-hidden rounded-2xl border border-emerald-300/[0.10] bg-gradient-to-r from-emerald-500/[0.10] via-white/[0.035] to-cyan-400/[0.055] shadow-[0_35px_100px_-65px_rgba(16,185,129,0.65)] backdrop-blur-2xl">
-                            <DecorativeGrid />
-
-                            <div className="relative flex flex-col gap-5 p-5 lg:p-6 xl:flex-row xl:items-center xl:justify-between">
-                                <div className="flex min-w-0 items-center gap-4">
-                                    <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-emerald-300/20 bg-emerald-300/10 shadow-[0_0_30px_-10px_rgba(52,211,153,0.75)]">
-                                        <div className="absolute inset-2 rounded-xl border border-emerald-300/10" />
-                                        <span className="relative text-xl text-emerald-200">
-                                            ✦
-                                        </span>
+                <main className="relative min-w-0 flex-1 px-4 py-4 sm:px-6 lg:px-8">
+                    <div className="mx-auto max-w-[1540px]">
+                        <section className="relative overflow-hidden rounded-[22px] border border-cyan-300/15 bg-[radial-gradient(circle_at_72%_18%,rgba(16,185,129,.12),transparent_28%),linear-gradient(135deg,#07141b,#061018_55%,#02090f)] shadow-[0_30px_100px_-55px_rgba(0,229,255,.55)]">
+                            <div className="absolute inset-0 opacity-30" style={{ backgroundImage: "linear-gradient(rgba(70,190,220,.07) 1px,transparent 1px),linear-gradient(90deg,rgba(70,190,220,.07) 1px,transparent 1px)", backgroundSize: "42px 42px" }} />
+                            <div className="pal-scan pointer-events-none absolute left-0 top-0 h-full w-1/3 bg-gradient-to-r from-transparent via-cyan-300/10 to-transparent blur-xl" />
+                            <div className="relative flex flex-col gap-5 px-5 py-5 lg:flex-row lg:items-start lg:justify-between lg:px-7 lg:py-6">
+                                <div className="flex items-center gap-4">
+                                    <div className="pal-float flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-cyan-300/30 bg-cyan-300/[0.07] shadow-[0_0_30px_rgba(34,211,238,.16)]">
+                                        <svg viewBox="0 0 48 48" className="h-9 w-9 text-cyan-300" fill="none"><path d="M7 34 17 23l7 6 12-17" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/><path d="M31 12h7v7" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/><circle cx="7" cy="34" r="2" fill="currentColor"/><circle cx="17" cy="23" r="2" fill="currentColor"/><circle cx="24" cy="29" r="2" fill="currentColor"/></svg>
                                     </div>
-
-                                    <div className="min-w-0">
-                                        <div className="flex flex-wrap items-center gap-2">
-                                            <h1 className="truncate text-xl font-semibold tracking-[-0.02em] text-white">
-                                                PAL Trading Buddy
-                                            </h1>
-
-                                            <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300/20 bg-emerald-300/10 px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-emerald-200">
-                                                <GlowDot />
-                                                Live
-                                            </span>
-                                        </div>
-
-                                        <p className="mt-1 text-xs text-zinc-500">
-                                            Global macro intelligence · important information, without the noise.
-                                        </p>
+                                    <div>
+                                        <div className="flex items-center gap-2.5"><h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">PAL Trading Buddy</h1><span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300/20 bg-emerald-300/10 px-2 py-1 text-[8px] font-bold tracking-wider text-emerald-300"><LivePulse /> LIVE</span></div>
+                                        <p className="mt-1 max-w-xl text-xs leading-5 text-zinc-500">Real market quotes + macro/news intelligence. No fabricated dashboard values.</p>
                                     </div>
                                 </div>
-
-                                <div className="flex flex-wrap items-stretch gap-2">
-                                    <SessionPill
-                                        name="London"
-                                        status={
-                                            sessionStatus.london
-                                        }
-                                    />
-
-                                    <SessionPill
-                                        name="New York"
-                                        status={
-                                            sessionStatus.newYork
-                                        }
-                                    />
-
-                                    <SessionPill
-                                        name="Sydney"
-                                        status={
-                                            sessionStatus.sydney
-                                        }
-                                    />
-
-                                    <SessionPill
-                                        name="Asia"
-                                        status={
-                                            sessionStatus.asia
-                                        }
-                                    />
-
-                                    <div className="min-w-[112px] rounded-xl border border-white/[0.08] bg-black/25 px-3 py-2 text-right shadow-inner shadow-white/[0.02]">
-                                        <div className="font-mono text-sm font-medium tracking-tight text-zinc-200">
-                                            {formatClock(
-                                                clock,
-                                            )}
-                                        </div>
-
-                                        <div className="mt-0.5 text-[8px] uppercase tracking-[0.16em] text-zinc-600">
-                                            Local time
-                                        </div>
-                                    </div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <Session name="LONDON" open={session.london} /><Session name="NEW YORK" open={session.newYork} /><Session name="SYDNEY" open={session.sydney} /><Session name="ASIA" open={session.asia} />
+                                    <div className="min-w-[112px] rounded-xl border border-white/[0.07] bg-black/20 px-4 py-2.5 text-center"><div className="font-mono text-lg tracking-tight text-white">{clock(now)}</div><div className="text-[8px] tracking-[0.18em] text-zinc-600">{dateLabel(now)}</div></div>
                                 </div>
                             </div>
+                            <div className="grid grid-cols-1 border-t border-white/[0.07] sm:grid-cols-3"><StatusStrip label="DXY" bias={dxyBias} /><StatusStrip label="GBP" bias={gbpBias} /><StatusStrip label="GBP/USD" bias={pairBias} /></div>
+                        </section>
 
-                            <div className="relative grid grid-cols-3 border-t border-white/[0.06] bg-black/10">
+                        <section className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                            <div className="relative overflow-hidden rounded-2xl border border-cyan-300/15 bg-[#071019]/80 p-4"><div className="text-[9px] uppercase tracking-[0.2em] text-zinc-600">LIVE QUOTES</div><div className="mt-3 text-3xl font-semibold">{liveCount}/6</div><div className="mt-1 text-[10px] text-zinc-500">CURRENT PROVIDER OBSERVATIONS</div><GlowLine tone="green" /></div>
+                            <div className="relative overflow-hidden rounded-2xl border border-blue-400/15 bg-[#071019]/80 p-4"><div className="text-[9px] uppercase tracking-[0.2em] text-zinc-600">SESSIONS</div><div className="mt-3 text-3xl font-semibold">{openSessions}</div><div className="mt-1 text-[10px] text-zinc-500">SESSIONS OPEN NOW</div><GlowLine tone="cyan" /></div>
+                            <div className="relative overflow-hidden rounded-2xl border border-amber-300/15 bg-[#071019]/80 p-4"><div className="text-[9px] uppercase tracking-[0.2em] text-zinc-600">GBP/USD BIAS</div><div className={`mt-3 text-3xl font-semibold ${pairBias === "BULLISH" ? "text-emerald-300" : pairBias === "BEARISH" ? "text-red-300" : pairBias === "NEUTRAL" ? "text-amber-300" : "text-zinc-400"}`}>{pairBias}</div><div className="mt-1 text-[10px] text-zinc-500">FUNDAMENTAL NEWS MODEL</div><GlowLine tone="amber" /></div>
+                            <div className="relative overflow-hidden rounded-2xl border border-emerald-300/15 bg-[#071019]/80 p-4"><div className="text-[9px] uppercase tracking-[0.2em] text-zinc-600">DATA INTEGRITY</div><div className="mt-3 text-3xl font-semibold text-emerald-300">{integrity}</div><div className="mt-1 text-[10px] text-zinc-500">UNKNOWN STAYS UNKNOWN</div><GlowLine tone="green" /></div>
+                        </section>
+
+                        <section className="relative mt-4 overflow-hidden rounded-[22px] border border-cyan-300/10 bg-[linear-gradient(135deg,rgba(8,22,28,.92),rgba(2,9,15,.95))] p-4 sm:p-5">
+                            <div className="flex items-end justify-between"><div><div className="text-[10px] font-bold tracking-[0.2em] text-cyan-300">MARKET DATA</div><h2 className="mt-1 text-xl font-semibold">Actual provider observations</h2><p className="mt-1 text-[10px] text-zinc-500">Prices and changes come directly from the backend market provider. If the provider cannot supply a current quote, PAL shows that state instead of guessing.</p></div><div className="flex items-center gap-2 text-[9px] text-zinc-500">REFRESH: 5S <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-300" /></div></div>
+                            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+                                <MarketCard label="DXY" quote={dxy} accent="red" digits={3} />
+                                <MarketCard label="GBP/USD" quote={gbpusd} accent="green" digits={4} />
+                                <MarketCard label="Gold" quote={gold} accent="green" digits={2} />
+                                <MarketCard label="WTI" quote={wti} accent="green" digits={2} />
+                                <MarketCard label="US 10Y" quote={us10y} accent="green" digits={3} />
+                                <MarketCard label="US500" quote={us500} accent="red" digits={2} />
+                            </div>
+                        </section>
+
+                        <section className="relative mt-4 overflow-hidden rounded-[22px] border border-cyan-300/10 bg-[radial-gradient(circle_at_82%_50%,rgba(0,220,255,.08),transparent_28%),linear-gradient(135deg,#06151b,#031016)] p-4 sm:p-5">
+                            <div className="absolute right-0 top-0 h-full w-[42%] opacity-70"><div className="absolute right-8 top-10 h-64 w-64 rounded-full border border-cyan-300/15 shadow-[0_0_80px_rgba(34,211,238,.12)] pal-float" /><div className="absolute right-20 top-22 h-44 w-44 rounded-full border border-emerald-300/10" /><div className="absolute right-4 top-24 h-56 w-56 rounded-full border border-cyan-300/10 [transform:rotate(28deg)]" /><div className="absolute right-24 top-28 h-40 w-40 rounded-full border border-cyan-300/10 [transform:rotate(-30deg)]" /><div className="absolute right-32 top-40 h-2 w-2 rounded-full bg-cyan-300 shadow-[0_0_20px_rgba(34,211,238,.9)] pal-glow" /></div>
+                            <div className="relative z-10"><div className="text-[10px] font-bold tracking-[0.2em] text-cyan-300">MACRO INTELLIGENCE</div><div className="mt-1 flex items-center gap-2"><h2 className="text-xl font-semibold">News-derived bias — evidence first</h2><span className="text-cyan-300">ⓘ</span></div><div className="mt-4 grid gap-3 lg:grid-cols-3">
                                 {[
-                                    ["DXY", dxyBias],
-                                    ["GBP", gbpBias],
-                                    ["GBP/USD", gbpUsdBias],
-                                ].map(([label, bias], index) => {
-                                    const tone =
-                                        bias === "BULLISH"
-                                            ? "emerald"
-                                            : bias === "BEARISH"
-                                              ? "red"
-                                              : "amber";
-
-                                    return (
-                                        <div
-                                            key={label}
-                                            className={`flex items-center justify-between gap-3 px-4 py-3 sm:px-6 ${
-                                                index > 0
-                                                    ? "border-l border-white/[0.06]"
-                                                    : ""
-                                            }`}
-                                        >
-                                            <div className="flex items-center gap-2">
-                                                <GlowDot
-                                                    tone={
-                                                        tone as any
-                                                    }
-                                                />
-                                                <span className="text-[9px] font-semibold uppercase tracking-[0.16em] text-zinc-600">
-                                                    {label}
-                                                </span>
-                                            </div>
-
-                                            <span
-                                                className={`text-[10px] font-semibold ${
-                                                    biasClasses(
-                                                        bias,
-                                                    ).text
-                                                }`}
-                                            >
-                                                {bias}
-                                            </span>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        </div>
-
-                        {/* MARKET SNAPSHOT */}
-                        <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                            <Panel className="group p-5 transition duration-300 hover:-translate-y-0.5 hover:border-emerald-300/[0.14]">
-                                <div className="flex items-start justify-between gap-4">
-                                    <div>
-                                        <div className="text-[9px] font-semibold uppercase tracking-[0.2em] text-zinc-600">
-                                            Primary Market
-                                        </div>
-
-                                        <div className="mt-3 text-2xl font-semibold tracking-[-0.03em] text-white">
-                                            {symbol}
-                                        </div>
-
-                                        <div className="mt-1 text-[10px] text-zinc-600">
-                                            Current focus
-                                        </div>
-                                    </div>
-
-                                    <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/[0.07] bg-white/[0.03] text-sm text-zinc-500">
-                                        ↗
-                                    </div>
-                                </div>
-
-                                <div className="mt-5 flex items-center gap-2 text-[10px] uppercase tracking-wider text-zinc-500">
-                                    <GlowDot tone="cyan" />
-                                    Live feed
-                                </div>
-                            </Panel>
-
-                            <Panel className="group p-5 transition duration-300 hover:-translate-y-0.5 hover:border-emerald-300/[0.14]">
-                                <div className="flex items-start justify-between gap-4">
-                                    <div>
-                                        <div className="text-[9px] font-semibold uppercase tracking-[0.2em] text-zinc-600">
-                                            GBP/USD
-                                        </div>
-
-                                        <div
-                                            className={`mt-3 text-2xl font-semibold tracking-[-0.03em] ${
-                                                biasClasses(
-                                                    gbpUsdBias,
-                                                ).text
-                                            }`}
-                                        >
-                                            {gbpUsdBias}
-                                        </div>
-
-                                        <div className="mt-1 text-[10px] text-zinc-600">
-                                            Fundamental direction
-                                        </div>
-                                    </div>
-
-                                    {typeof macro?.gbpusd?.bullish ===
-                                    "number" ? (
-                                        <ProbabilityRing
-                                            value={
-                                                macro.gbpusd
-                                                    .bullish
-                                            }
-                                            tone={
-                                                gbpUsdBias ===
-                                                "BULLISH"
-                                                    ? "emerald"
-                                                    : gbpUsdBias ===
-                                                        "BEARISH"
-                                                      ? "red"
-                                                      : "neutral"
-                                            }
-                                        />
-                                    ) : (
-                                        <div className="flex h-10 items-center rounded-xl border border-white/[0.07] bg-black/20 px-3 text-[9px] uppercase tracking-[0.14em] text-zinc-600">
-                                            Probability pending
-                                        </div>
-                                    )}
-                                </div>
-                            </Panel>
-
-                            <Panel className="group p-5 transition duration-300 hover:-translate-y-0.5 hover:border-cyan-300/[0.14]">
-                                <div className="flex items-start justify-between gap-4">
-                                    <div>
-                                        <div className="text-[9px] font-semibold uppercase tracking-[0.2em] text-zinc-600">
-                                            Dollar
-                                        </div>
-
-                                        <div
-                                            className={`mt-3 text-2xl font-semibold tracking-[-0.03em] ${
-                                                biasClasses(
-                                                    dxyBias,
-                                                ).text
-                                            }`}
-                                        >
-                                            {dxyBias}
-                                        </div>
-
-                                        <div className="mt-1 text-[10px] text-zinc-600">
-                                            DXY direction
-                                        </div>
-                                    </div>
-
-                                    <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-red-300/10 bg-red-300/[0.04]">
-                                        <GlowDot
-                                            tone={
-                                                dxyBias ===
-                                                "BEARISH"
-                                                    ? "red"
-                                                    : "cyan"
-                                            }
-                                        />
-                                    </div>
-                                </div>
-                            </Panel>
-
-                            <Panel className="group p-5 transition duration-300 hover:-translate-y-0.5 hover:border-amber-300/[0.14]">
-                                <div className="flex items-start justify-between gap-4">
-                                    <div>
-                                        <div className="text-[9px] font-semibold uppercase tracking-[0.2em] text-zinc-600">
-                                            Market Condition
-                                        </div>
-
-                                        <div className="mt-3 text-2xl font-semibold tracking-[-0.03em] text-white">
-                                            {marketHealth}
-                                        </div>
-
-                                        <div className="mt-1 text-[10px] text-zinc-600">
-                                            Current feed status
-                                        </div>
-                                    </div>
-
-                                    <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-amber-300/10 bg-amber-300/[0.04] text-amber-300">
-                                        ◌
-                                    </div>
-                                </div>
-                            </Panel>
-                        </div>
-
-                        {/* AI MACRO DESK */}
-                        <div className="mt-5">
-                            <Panel className="overflow-hidden border-cyan-300/[0.08]">
-                                <div className="relative border-b border-white/[0.06] px-5 py-4 sm:px-6">
-                                    <div className="pointer-events-none absolute right-0 top-0 h-28 w-72 bg-cyan-400/[0.035] blur-3xl" />
-
-                                    <div className="relative flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                                        <SectionHeading
-                                            eyebrow="AI Macro Desk"
-                                            title="Markets That Matter"
-                                            description="A compact cross-asset view of the forces that can shape GBP/USD."
-                                        />
-
-                                        <div className="flex items-center gap-2 text-[9px] uppercase tracking-[0.14em] text-zinc-700">
-                                            <GlowDot tone="cyan" />
-                                            Live feed architecture
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-3">
-                                    {macroDesk.map((item) => (
-                                        <MacroDeskCard
-                                            key={item.label}
-                                            label={item.label}
-                                            subtitle={item.subtitle}
-                                            market={item.market}
-                                            fallbackBias={item.fallbackBias}
-                                            accent={item.accent as "emerald" | "red" | "amber" | "cyan"}
-                                        />
-                                    ))}
-                                </div>
-
-                                <div className="border-t border-white/[0.06] bg-black/10 px-5 py-3 text-[10px] leading-5 text-zinc-700 sm:px-6">
-                                    Prices, changes and confidence are shown only when supplied by the macro market feed. No values are invented by the Dashboard.
-                                </div>
-                            </Panel>
-                        </div>
-
-                        {/* HERO */}
-                        <div className="mt-5 grid gap-5 xl:grid-cols-[1.65fr_0.95fr]">
-                            <Panel className="overflow-hidden border-emerald-300/[0.10]">
-                                <div className="pointer-events-none absolute -right-28 -top-28 h-64 w-64 rounded-full bg-emerald-400/[0.06] blur-3xl" />
-                                <div className="relative border-b border-white/[0.06] px-5 py-4 sm:px-6">
-                                    <div className="flex items-start justify-between gap-4">
-                                        <SectionHeading
-                                            eyebrow="For You"
-                                            title="Market Briefing"
-                                            description="The important part of the current market picture — without the noise."
-                                        />
-
-                                        <div className="hidden rounded-lg border border-white/[0.06] bg-black/20 px-3 py-1.5 text-[9px] uppercase tracking-wider text-zinc-600 sm:block">
-                                            {formatDate(
-                                                clock,
-                                            )}
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="grid gap-5 p-5 sm:p-6 lg:grid-cols-[1.35fr_0.8fr]">
-                                    <div>
-                                        <div
-                                            className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider ${
-                                                biasClasses(
-                                                    gbpUsdBias,
-                                                ).border
-                                            } ${
-                                                biasClasses(
-                                                    gbpUsdBias,
-                                                ).soft
-                                            } ${
-                                                biasClasses(
-                                                    gbpUsdBias,
-                                                ).text
-                                            }`}
-                                        >
-                                            <span
-                                                className={`h-1.5 w-1.5 rounded-full ${
-                                                    biasClasses(
-                                                        gbpUsdBias,
-                                                    ).dot
-                                                }`}
-                                            />
-                                            GBP/USD{" "}
-                                            {gbpUsdBias}
-                                        </div>
-
-                                        <h2 className="mt-4 max-w-2xl text-2xl font-semibold leading-[1.12] tracking-[-0.03em] text-white sm:text-4xl">
-                                            {briefingHeadline}
-                                        </h2>
-
-                                        <p className="mt-4 max-w-2xl text-sm leading-7 text-zinc-400">
-                                            {briefingSummary}
-                                        </p>
-
-                                        <div className="mt-6 rounded-xl border border-amber-400/15 bg-amber-400/[0.045] p-4">
-                                            <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-amber-300">
-                                                <span>⚠</span>
-                                                Main Risk
-                                            </div>
-
-                                            <p className="mt-2 text-sm leading-6 text-zinc-400">
-                                                {mainRisk}
-                                            </p>
-                                        </div>
-                                    </div>
-
-                                    <div className="rounded-2xl border border-white/[0.06] bg-black/20 p-4">
-                                        <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-600">
-                                            Macro Confidence
-                                        </div>
-
-                                        {confidence !== null ? (
-                                            <>
-                                                <div className="mt-4 flex items-end justify-between">
-                                                    <div className="text-4xl font-semibold tracking-tight text-white">
-                                                        {
-                                                            confidence
-                                                        }
-                                                    </div>
-
-                                                    <div className="pb-1 text-xs text-zinc-600">
-                                                        / 100
-                                                    </div>
-                                                </div>
-
-                                                <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-zinc-800">
-                                                    <div
-                                                        className="h-full rounded-full bg-emerald-400 shadow-[0_0_18px_rgba(52,211,153,0.28)]"
-                                                        style={{
-                                                            width: `${Math.min(
-                                                                Math.max(
-                                                                    confidence,
-                                                                    0,
-                                                                ),
-                                                                100,
-                                                            )}%`,
-                                                        }}
-                                                    />
-                                                </div>
-                                            </>
-                                        ) : (
-                                            <div className="mt-5 rounded-xl border border-dashed border-white/[0.07] p-4">
-                                                <div className="text-sm font-medium text-zinc-300">
-                                                    Awaiting macro feed
-                                                </div>
-
-                                                <div className="mt-1 text-xs leading-5 text-zinc-600">
-                                                    Fundamental probability data will appear here when supplied by the macro briefing service.
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        <div className="mt-5 border-t border-white/[0.06] pt-4">
-                                            <div className="text-[10px] uppercase tracking-[0.16em] text-zinc-600">
-                                                Data status
-                                            </div>
-
-                                            <div className="mt-2 flex items-center gap-2 text-xs text-zinc-400">
-                                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                                                Connected to PAL feed
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </Panel>
-
-                            <Panel className="p-5 sm:p-6">
-                                <div className="flex items-start justify-between gap-4">
-                                    <SectionHeading
-                                        eyebrow="Market View"
-                                        title="Bias Monitor"
-                                        description="Fundamental directional context from the current market feed."
-                                    />
-
-                                    {hasMacroProbabilities ? (
-                                        <span className="rounded-lg border border-emerald-400/15 bg-emerald-400/5 px-2 py-1 text-[9px] uppercase tracking-wider text-emerald-300">
-                                            Macro
-                                        </span>
-                                    ) : (
-                                        <span className="rounded-lg border border-white/[0.06] bg-black/20 px-2 py-1 text-[9px] uppercase tracking-wider text-zinc-600">
-                                            Feed
-                                        </span>
-                                    )}
-                                </div>
-
-                                <div className="mt-6 space-y-3">
-                                    {probabilityCards.map(
-                                        (item) => (
-                                            <div
-                                                key={
-                                                    item.label
-                                                }
-                                                className="rounded-xl border border-white/[0.07] bg-gradient-to-br from-white/[0.035] to-black/20 p-4 shadow-inner shadow-white/[0.02]"
-                                            >
-                                                <div className="flex items-center justify-between gap-4">
-                                                    <div>
-                                                        <div className="text-sm font-semibold text-white">
-                                                            {
-                                                                item.label
-                                                            }
-                                                        </div>
-
-                                                        <div
-                                                            className={`mt-1 text-[10px] font-semibold uppercase tracking-wider ${
-                                                                biasClasses(
-                                                                    item.bias,
-                                                                ).text
-                                                            }`}
-                                                        >
-                                                            {
-                                                                item.bias
-                                                            }
-                                                        </div>
-                                                    </div>
-
-                                                    <div className="text-right">
-                                                        {item.bullish !==
-                                                            null &&
-                                                        item.bearish !==
-                                                            null ? (
-                                                            <>
-                                                                <div className="text-sm font-semibold text-zinc-200">
-                                                                    {
-                                                                        item.bullish
-                                                                    }
-                                                                    %
-                                                                    <span className="px-1 text-zinc-700">
-                                                                        /
-                                                                    </span>
-                                                                    {
-                                                                        item.bearish
-                                                                    }
-                                                                    %
-                                                                </div>
-
-                                                                <div className="text-[9px] uppercase tracking-wider text-zinc-600">
-                                                                    Bull / Bear
-                                                                </div>
-                                                            </>
-                                                        ) : (
-                                                            <div className="text-[10px] uppercase tracking-wider text-zinc-700">
-                                                                Probability
-                                                                pending
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                </div>
-
-                                                {item.bullish !==
-                                                    null &&
-                                                item.bearish !==
-                                                    null ? (
-                                                    <div className="mt-4 flex h-1.5 overflow-hidden rounded-full bg-zinc-800">
-                                                        <div
-                                                            className="bg-emerald-400"
-                                                            style={{
-                                                                width: `${item.bullish}%`,
-                                                            }}
-                                                        />
-
-                                                        <div
-                                                            className="bg-red-400"
-                                                            style={{
-                                                                width: `${item.bearish}%`,
-                                                            }}
-                                                        />
-                                                    </div>
-                                                ) : null}
-                                            </div>
-                                        ),
-                                    )}
-                                </div>
-                            </Panel>
-                        </div>
-
-                        {/* EVENTS + MACRO PULSE */}
-                        <div className="mt-5 grid gap-5 lg:grid-cols-[1.15fr_0.85fr]">
-                            <Panel className="p-5 sm:p-6">
-                                <div className="flex items-start justify-between gap-4">
-                                    <SectionHeading
-                                        eyebrow="Important Events"
-                                        title="What Matters Next"
-                                        description="Only high-impact items supplied by the market feed."
-                                    />
-
-                                    <span className="rounded-lg border border-white/[0.06] bg-black/20 px-2.5 py-1.5 text-[9px] uppercase tracking-wider text-zinc-600">
-                                        {
-                                            macroEvents.length
-                                        }{" "}
-                                        items
-                                    </span>
-                                </div>
-
-                                {macroEvents.length === 0 ? (
-                                    <div className="mt-5 rounded-xl border border-dashed border-white/[0.07] bg-black/10 p-5 text-center">
-                                        <div className="text-sm text-zinc-400">
-                                            No high-impact events currently supplied.
-                                        </div>
-
-                                        <div className="mt-1 text-xs text-zinc-600">
-                                            {newsSummary}
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <div className="mt-5 space-y-2">
-                                        {macroEvents
-                                            .slice(0, 5)
-                                            .map(
-                                                (
-                                                    event,
-                                                    index,
-                                                ) => (
-                                                    <div
-                                                        key={`${event.title ?? "event"}-${index}`}
-                                                        className="flex items-center justify-between gap-4 rounded-xl border border-white/[0.06] bg-black/20 p-4"
-                                                    >
-                                                        <div className="flex min-w-0 items-center gap-3">
-                                                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-red-400/10 text-red-300">
-                                                                <span className="text-xs">
-                                                                    !
-                                                                </span>
-                                                            </div>
-
-                                                            <div className="min-w-0">
-                                                                <div className="truncate text-sm font-medium text-zinc-200">
-                                                                    {
-                                                                        event.title
-                                                                    }
-                                                                </div>
-
-                                                                <div className="mt-1 text-[10px] text-zinc-600">
-                                                                    {event.time
-                                                                        ? String(
-                                                                              event.time,
-                                                                          )
-                                                                        : "Time not supplied"}
-                                                                </div>
-                                                            </div>
-                                                        </div>
-
-                                                        <div className="shrink-0 text-right">
-                                                            {typeof event.minutes ===
-                                                            "number" ? (
-                                                                <div className="text-xs font-semibold text-amber-300">
-                                                                    {
-                                                                        event.minutes
-                                                                    }
-                                                                    m
-                                                                </div>
-                                                            ) : (
-                                                                <div className="text-[9px] uppercase tracking-wider text-zinc-700">
-                                                                    High
-                                                                    impact
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                ),
-                                            )}
-                                    </div>
-                                )}
-
-                                <div className="mt-4 rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3 text-xs text-zinc-500">
-                                    {newsSummary}
-                                </div>
-                            </Panel>
-
-                            <Panel className="p-5 sm:p-6">
-                                <SectionHeading
-                                    eyebrow="Macro Pulse"
-                                    title="Market Context"
-                                    description="A compact view of the fundamental forces currently visible to PAL."
-                                />
-
-                                <div className="mt-5 space-y-3">
-                                    <div className="flex items-center justify-between rounded-xl border border-white/[0.06] bg-black/20 p-4">
-                                        <span className="text-xs text-zinc-500">
-                                            Dollar
-                                        </span>
-
-                                        <span
-                                            className={`text-sm font-semibold ${
-                                                biasClasses(
-                                                    dxyBias,
-                                                ).text
-                                            }`}
-                                        >
-                                            {dxyBias}
-                                        </span>
-                                    </div>
-
-                                    <div className="flex items-center justify-between rounded-xl border border-white/[0.06] bg-black/20 p-4">
-                                        <span className="text-xs text-zinc-500">
-                                            Sterling
-                                        </span>
-
-                                        <span
-                                            className={`text-sm font-semibold ${
-                                                biasClasses(
-                                                    gbpUsdBias,
-                                                ).text
-                                            }`}
-                                        >
-                                            {gbpUsdBias}
-                                        </span>
-                                    </div>
-
-                                    <div className="rounded-xl border border-white/[0.07] bg-gradient-to-br from-white/[0.035] to-black/20 p-4 shadow-inner shadow-white/[0.02]">
-                                        <div className="text-[10px] uppercase tracking-[0.16em] text-zinc-600">
-                                            Key Theme
-                                        </div>
-
-                                        <div className="mt-2 text-sm leading-6 text-zinc-300">
-                                            {macroOnlyText(
-                                                macro?.theme,
-                                                "Relative currency strength, rates, growth and geopolitical risk are shaping the current market picture.",
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    <div className="rounded-xl border border-amber-400/10 bg-amber-400/[0.035] p-4">
-                                        <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-amber-300">
-                                            Risk Watch
-                                        </div>
-
-                                        <div className="mt-2 text-sm leading-6 text-zinc-400">
-                                            {mainRisk}
-                                        </div>
-                                    </div>
-                                </div>
-                            </Panel>
-                        </div>
-
-                        {/* LOWER NEWS STRIP */}
-                        <div className="mt-5">
-                            <Panel className="overflow-hidden">
-                                <div className="flex items-center justify-between border-b border-white/[0.06] px-5 py-4 sm:px-6">
-                                    <SectionHeading
-                                        eyebrow="News Intelligence"
-                                        title="Market News"
-                                    />
-
-                                    <span className="text-[9px] uppercase tracking-wider text-zinc-700">
-                                        Curated
-                                    </span>
-                                </div>
-
-                                <div className="grid divide-y divide-white/[0.05] md:grid-cols-3 md:divide-x md:divide-y-0">
-                                    {(
-                                        Array.isArray(
-                                            macro?.news,
-                                        )
-                                            ? macro.news
-                                            : []
-                                    )
-                                        .slice(0, 3)
-                                        .map(
-                                            (
-                                                item: any,
-                                                index: number,
-                                            ) => (
-                                                <div
-                                                    key={
-                                                        index
-                                                    }
-                                                    className="p-5"
-                                                >
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-
-                                                        <span className="text-[9px] uppercase tracking-wider text-zinc-600">
-                                                            {item.time ??
-                                                                "Latest"}
-                                                        </span>
-                                                    </div>
-
-                                                    <p className="mt-3 text-sm leading-6 text-zinc-300">
-                                                        {item.title ??
-                                                            item.summary ??
-                                                            String(
-                                                                item,
-                                                            )}
-                                                    </p>
-                                                </div>
-                                            ),
-                                        )}
-
-                                    {(!Array.isArray(
-                                        macro?.news,
-                                    ) ||
-                                        macro.news.length ===
-                                            0) && (
-                                        <div className="col-span-full p-10 text-center">
-                                            <div className="text-sm text-zinc-400">
-                                                News intelligence feed is ready.
-                                            </div>
-
-                                            <div className="mt-1 text-xs text-zinc-600">
-                                                Connect the macro briefing feed to populate curated market stories here.
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                            </Panel>
-                        </div>
-
-                        <div className="py-8 text-center text-[10px] uppercase tracking-[0.18em] text-zinc-700">
-                            PAL Trading Buddy · Market intelligence
-                        </div>
+                                    ["DXY", dxyBias, macro?.dxy?.reasons?.[0] || "No explicit DXY macro evidence was returned by the current model."],
+                                    ["GBP", gbpBias, macro?.gbp?.reasons?.[0] || "No explicit GBP macro evidence was returned by the current model."],
+                                    ["GBP/USD", pairBias, macro?.gbpusd?.reasons?.[0] || reason],
+                                ].map(([label, bias, text]) => <article key={String(label)} className="min-h-[150px] rounded-2xl border border-white/[0.08] bg-black/25 p-4 backdrop-blur-xl"><div className="flex items-center justify-between"><span className="text-sm font-semibold text-white">{label}</span><span className={`rounded-lg border px-2 py-1 text-[8px] font-bold ${biasTone(String(bias))}`}>{bias}</span></div><p className="mt-5 max-w-sm text-xs leading-5 text-zinc-400">{String(text)}</p></article>)}
+                            </div></div>
+                            <div className="relative z-10 mt-3 rounded-xl border border-cyan-300/10 bg-black/20 px-4 py-3 text-[10px] leading-5 text-zinc-400"><span className="mr-2 text-cyan-300">ⓘ</span><span>Important: </span><strong className="text-amber-300">NEUTRAL</strong><span> means the news model found balanced evidence. </span><strong className="text-zinc-300">UNKNOWN</strong><span> means the feed did not provide enough evidence to calculate a directional bias. The UI never converts UNKNOWN into fake NEUTRAL.</span></div>
+                        </section>
+
+                        <section className="mt-4 grid gap-4 lg:grid-cols-[1.4fr_1fr]">
+                            <div className="rounded-[22px] border border-white/[0.07] bg-[#061018]/80 p-5"><div className="text-[10px] font-bold tracking-[0.2em] text-cyan-300">CURRENT MACRO STORY</div><h2 className="mt-2 text-lg font-semibold">{headline}</h2><p className="mt-3 text-sm leading-6 text-zinc-400">{summary}</p></div>
+                            <div className="rounded-[22px] border border-white/[0.07] bg-[#061018]/80 p-5"><div className="text-[10px] font-bold tracking-[0.2em] text-cyan-300">PROVIDER STATE</div><div className="mt-3 grid grid-cols-2 gap-3"><div className="rounded-xl border border-white/[0.06] bg-black/20 p-3"><div className="text-[8px] text-zinc-600">MARKET FEED</div><div className="mt-1 text-sm font-semibold text-white">{isError ? "UNAVAILABLE" : "CONNECTED"}</div></div><div className="rounded-xl border border-white/[0.06] bg-black/20 p-3"><div className="text-[8px] text-zinc-600">MACRO CONFIDENCE</div><div className="mt-1 text-sm font-semibold text-white">{typeof macro?.confidence === "number" ? `${Math.round(macro.confidence)}%` : "—"}</div></div></div></div>
+                        </section>
                     </div>
                 </main>
             </div>
         </div>
     );
 }
-
-
-export default Dashboard;
