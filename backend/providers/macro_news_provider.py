@@ -10,55 +10,47 @@ logger = logging.getLogger(__name__)
 
 
 class MacroNewsProvider:
-    """Broad GBP/USD macro-news collector with resilient GDELT access.
+    """Small, resilient GDELT supplement for the GBP/USD macro feed.
 
-    GDELT is treated as one evidence source, not the entire intelligence layer.
-    The provider deliberately caches successful results and backs off on 429s so
-    frontend polling cannot hammer the public endpoint.
+    GDELT is supplemental evidence. Google News remains independent, and a
+    GDELT outage must never cause a request storm or block the rest of PAL.
     """
 
     BASE_URL = "https://api.gdeltproject.org/api/v2/doc/doc"
 
     CACHE_SECONDS = 15 * 60
+    FAILED_RETRY_SECONDS = 10 * 60
     REQUEST_TIMEOUT = 20
-    MAX_RECORDS = 50
+    MAX_RECORDS = 30
     TIMESpan = "72h"
 
+    # Keep this deliberately compact. GDELT supports Boolean OR blocks, but a
+    # very large query can be rejected as invalid. Broad coverage comes from
+    # the independent Google News feed plus this focused macro query.
     QUERY = (
-        "("
-        '"Federal Reserve" OR FOMC OR "Fed minutes" OR "Fed chair" OR '
-        '"Bank of England" OR BoE OR MPC OR "BoE minutes" OR '
-        '"US inflation" OR "US CPI" OR "US PCE" OR "US PPI" OR '
-        '"UK inflation" OR "UK CPI" OR "UK PPI" OR '
-        '"nonfarm payrolls" OR NFP OR unemployment OR "jobless claims" OR '
-        '"UK jobs" OR "UK employment" OR wages OR payrolls OR '
-        'GDP OR PMI OR "retail sales" OR "consumer confidence" OR '
-        '"interest rate" OR "rate decision" OR "rate cut" OR "rate hike" OR '
-        '"rate expectations" OR "rate hike bets" OR "rate cut bets" OR '
-        '"Treasury yields" OR "US yields" OR "gilt yields" OR "UK yields" OR '
-        '"yield differential" OR "rate differential" OR DXY OR dollar OR '
-        'pound OR sterling OR GBP/USD OR GBPUSD OR '
-        'oil OR crude OR "risk aversion" OR "risk appetite" OR geopolitics OR '
-        'tariff OR sanctions OR fiscal OR budget'
-        ")"
-        " AND "
-        "("
-        '"United States" OR US OR USD OR dollar OR Fed OR '
-        '"United Kingdom" OR UK OR GBP OR pound OR sterling OR BoE OR '
-        '"GBP/USD" OR GBPUSD'
-        ")"
+        '("Federal Reserve" OR FOMC OR "Bank of England" OR BoE OR '
+        'inflation OR NFP OR GDP OR PMI OR "retail sales" OR '
+        '"rate decision" OR "rate cut" OR "rate hike") '
+        '(USD OR GBP OR dollar OR pound OR sterling)'
     )
 
     def __init__(self):
         self.session = requests.Session()
         self.session.headers.update(
             {
-                "User-Agent": "PAL-Trading-Buddy/2.3 (macro intelligence; contact: local-app)",
+                "User-Agent": "PAL-Trading-Buddy/2.4 (macro intelligence)",
                 "Accept": "application/json",
             }
         )
         self._cached_articles: list[dict[str, Any]] = []
         self._last_successful_fetch = 0.0
+        self._last_attempt = 0.0
+        self._last_failure: str | None = None
+
+    def _failure_cooldown_active(self) -> bool:
+        return bool(self._last_attempt) and not self._cached_articles and (
+            time.monotonic() - self._last_attempt < self.FAILED_RETRY_SECONDS
+        )
 
     def _request(self) -> dict[str, Any]:
         params = {
@@ -70,44 +62,33 @@ class MacroNewsProvider:
             "sort": "datedesc",
         }
 
-        last_error: Exception | None = None
-        for attempt in range(3):
-            try:
-                response = self.session.get(
-                    self.BASE_URL,
-                    params=params,
-                    timeout=self.REQUEST_TIMEOUT,
-                )
-                if response.status_code == 429:
-                    retry_after = response.headers.get("Retry-After")
-                    delay = float(retry_after) if retry_after and retry_after.isdigit() else (2 ** attempt) * 2
-                    logger.warning("GDELT rate limited; backing off %.1fs", delay)
-                    time.sleep(min(delay, 8.0))
-                    last_error = RuntimeError("GDELT rate limited (HTTP 429).")
-                    continue
+        response = self.session.get(
+            self.BASE_URL,
+            params=params,
+            timeout=self.REQUEST_TIMEOUT,
+        )
 
-                response.raise_for_status()
-                if not response.text.strip():
-                    raise RuntimeError("GDELT returned an empty response.")
+        if response.status_code == 429:
+            raise RuntimeError("GDELT rate limited (HTTP 429).")
 
-                content_type = response.headers.get("content-type", "").lower()
-                try:
-                    payload = response.json()
-                except ValueError as ex:
-                    snippet = response.text[:120].replace("\n", " ")
-                    raise RuntimeError(
-                        f"GDELT returned invalid JSON ({content_type or 'unknown content type'}: {snippet})."
-                    ) from ex
+        response.raise_for_status()
 
-                if not isinstance(payload, dict):
-                    raise RuntimeError("GDELT returned an unexpected response.")
-                return payload
-            except Exception as ex:
-                last_error = ex
-                if attempt < 2:
-                    time.sleep((2 ** attempt) * 1.5)
+        if not response.text.strip():
+            raise RuntimeError("GDELT returned an empty response.")
 
-        raise last_error or RuntimeError("GDELT request failed.")
+        content_type = response.headers.get("content-type", "").lower()
+        try:
+            payload = response.json()
+        except ValueError as ex:
+            snippet = response.text[:160].replace("\n", " ")
+            raise RuntimeError(
+                f"GDELT returned invalid JSON ({content_type or 'unknown content type'}: {snippet})."
+            ) from ex
+
+        if not isinstance(payload, dict):
+            raise RuntimeError("GDELT returned an unexpected response.")
+
+        return payload
 
     @staticmethod
     def _parse_datetime(value):
@@ -133,8 +114,14 @@ class MacroNewsProvider:
     @staticmethod
     def _detect_currency(title: str, domain: str) -> str:
         text = f"{title} {domain}".lower()
-        gbp_terms = ("bank of england", "boe", "united kingdom", "uk ", "britain", "british", "pound", "sterling", "gbp")
-        usd_terms = ("federal reserve", "fomc", "fed ", "united states", "us ", "american", "dollar", "usd")
+        gbp_terms = (
+            "bank of england", "boe", "united kingdom", "uk ", "britain",
+            "british", "pound", "sterling", "gbp",
+        )
+        usd_terms = (
+            "federal reserve", "fomc", "fed ", "united states", "us ",
+            "american", "dollar", "usd",
+        )
         gbp_score = sum(1 for term in gbp_terms if term in text)
         usd_score = sum(1 for term in usd_terms if term in text)
         if gbp_score > usd_score:
@@ -147,14 +134,13 @@ class MacroNewsProvider:
     def _detect_impact(title: str) -> str:
         title_lower = title.lower()
         high_terms = (
-            "federal reserve", "fomc", "fed minutes", "interest rate", "rate decision",
-            "bank of england", "boe", "cpi", "inflation", "pce", "nonfarm payroll",
-            "nfp", "unemployment", "gdp", "tariff", "sanctions", "geopolit", "oil",
+            "federal reserve", "fomc", "bank of england", "boe", "cpi",
+            "inflation", "pce", "nonfarm payroll", "nfp", "unemployment",
+            "gdp", "rate decision", "rate cut", "rate hike",
         )
         medium_terms = (
             "retail sales", "jobless claims", "pmi", "employment", "wages",
-            "consumer confidence", "consumer sentiment", "manufacturing", "services",
-            "treasury yields", "gilt yields", "rate expectations", "risk aversion",
+            "consumer confidence", "rate expectations",
         )
         if any(term in title_lower for term in high_terms):
             return "HIGH"
@@ -168,7 +154,9 @@ class MacroNewsProvider:
         title = str(article.get("title", "")).strip()
         if not title:
             return None
-        published = self._parse_datetime(article.get("seendate") or article.get("published") or article.get("date"))
+        published = self._parse_datetime(
+            article.get("seendate") or article.get("published") or article.get("date")
+        )
         if published is None:
             return None
         url = str(article.get("url", "")).strip()
@@ -207,6 +195,13 @@ class MacroNewsProvider:
         if self._cache_is_fresh():
             return list(self._cached_articles)
 
+        # Critical: when the public endpoint is unavailable, do not retry on
+        # every frontend poll. This was the source of the repeated 429 storm.
+        if self._failure_cooldown_active():
+            return []
+
+        self._last_attempt = time.monotonic()
+
         try:
             payload = self._request()
             raw_articles = payload.get("articles", [])
@@ -219,16 +214,21 @@ class MacroNewsProvider:
                 if (normalized := self._normalize_article(raw_article)) is not None
             ]
             articles = self._deduplicate(articles)
-            articles.sort(key=lambda article: article.get("published_at", ""), reverse=True)
+            articles.sort(
+                key=lambda article: article.get("published_at", ""),
+                reverse=True,
+            )
             articles = articles[: self.MAX_RECORDS]
 
             self._cached_articles = articles
             self._last_successful_fetch = time.monotonic()
+            self._last_failure = None
             logger.info("GDELT macro news refreshed: %s articles", len(articles))
             return list(articles)
+
         except Exception as ex:
+            self._last_failure = str(ex)
             logger.warning("GDELT news refresh failed: %s", ex)
             if self._cached_articles:
-                logger.info("Using cached GDELT news: %s articles", len(self._cached_articles))
                 return list(self._cached_articles)
             return []
