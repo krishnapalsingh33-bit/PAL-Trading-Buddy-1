@@ -1,1 +1,1 @@
-export { default } from "./DashboardClassic";
+export { default } from "./DashboardLive";
