@@ -1,4 +1,5 @@
 import logging
+import threading
 import time
 from datetime import datetime, timezone
 from typing import Any
@@ -10,125 +11,83 @@ logger = logging.getLogger(__name__)
 
 
 class MacroNewsProvider:
-    """
-    PAL Macro News Provider.
+    """Retrieve and normalize recent GDELT macro news for GBP/USD.
 
-    Uses the free GDELT DOC API to retrieve recent
-    macroeconomic news relevant to GBP/USD.
-
-    IMPORTANT:
-
-    This provider does NOT:
-    - analyze charts
-    - create trade setups
-    - determine entries
-    - determine exits
-    - provide trading strategy
-
-    It only retrieves and normalizes macro news.
-
-    The provider uses an in-memory cache so that the
-    frontend can poll PAL frequently without repeatedly
-    calling GDELT.
+    GDELT is rate-limited. This provider therefore uses a process-wide cache
+    plus a circuit breaker so frontend polling can never turn into a request
+    storm. A temporary GDELT outage/rate limit is treated as a source outage,
+    not as market evidence.
     """
 
-    BASE_URL = (
-        "https://api.gdeltproject.org/api/v2/doc/doc"
-    )
-
-    # ----------------------------------------------------------
-    # Cache configuration
-    # ----------------------------------------------------------
+    BASE_URL = "https://api.gdeltproject.org/api/v2/doc/doc"
 
     CACHE_SECONDS = 15 * 60
-
-    REQUEST_TIMEOUT = 20
-
+    REQUEST_TIMEOUT = 15
     MAX_RECORDS = 25
 
-    TIMESpan = "24h"
-
-    # ----------------------------------------------------------
-    # Combined GBP/USD macro query
-    # ----------------------------------------------------------
-    #
-    # One request instead of separate USD / GBP / CROSS
-    # requests.
-    #
+    # After a 429 or malformed response, do not immediately retry. This is
+    # deliberately longer than the dashboard polling interval.
+    RATE_LIMIT_COOLDOWN_SECONDS = 15 * 60
+    ERROR_COOLDOWN_SECONDS = 5 * 60
 
     QUERY = (
-        "("
-        '"Federal Reserve" OR '
-        "FOMC OR "
-        '"Bank of England" OR '
-        "BoE OR "
-        '"US inflation" OR '
-        '"UK inflation" OR '
-        "CPI OR "
-        "PCE OR "
-        "PPI OR "
-        '"nonfarm payrolls" OR '
-        "NFP OR "
-        "unemployment OR "
-        '"jobless claims" OR '
-        "GDP OR "
-        '"retail sales" OR '
-        "PMI OR "
-        "employment OR "
-        "wages OR "
-        '"interest rate" OR '
-        '"rate decision"'
-        ")"
-        " AND "
-        "("
-        '"United States" OR '
-        "US OR "
-        '"United Kingdom" OR '
-        "UK OR "
-        "USD OR "
-        "GBP OR "
-        "dollar OR "
-        "pound OR "
-        "sterling"
-        ")"
+        '("Federal Reserve" OR FOMC OR "Bank of England" OR BoE OR '
+        '"US inflation" OR "UK inflation" OR CPI OR PCE OR PPI OR '
+        '"nonfarm payrolls" OR NFP OR unemployment OR "jobless claims" OR '
+        'GDP OR "retail sales" OR PMI OR employment OR wages OR '
+        '"interest rate" OR "rate decision") '
+        'AND ("United States" OR US OR "United Kingdom" OR UK OR '
+        'USD OR GBP OR dollar OR pound OR sterling)'
     )
 
+    # Shared across instances so a dev reload or route reconstruction does
+    # not immediately start another GDELT request.
+    _cache: list[dict[str, Any]] = []
+    _last_successful_fetch = 0.0
+    _blocked_until = 0.0
+    _last_failure_log = 0.0
+    _lock = threading.Lock()
+
     def __init__(self):
-
         self.session = requests.Session()
-
         self.session.headers.update(
             {
-                "User-Agent": (
-                    "PAL-Trading-Buddy/2.0 "
-                    "MacroNewsProvider"
-                ),
+                "User-Agent": "PAL-Trading-Buddy/2.0 (+macro-news-provider)",
                 "Accept": "application/json",
             }
         )
 
-        # ------------------------------------------------------
-        # Instance cache
-        # ------------------------------------------------------
+    @classmethod
+    def _cache_is_fresh(cls) -> bool:
+        return bool(cls._cache) and (
+            time.monotonic() - cls._last_successful_fetch < cls.CACHE_SECONDS
+        )
 
-        self._cached_articles: list[
-            dict[str, Any]
-        ] = []
+    @classmethod
+    def _blocked(cls) -> bool:
+        return time.monotonic() < cls._blocked_until
 
-        self._last_successful_fetch = 0.0
+    @classmethod
+    def _set_cooldown(cls, seconds: int) -> None:
+        cls._blocked_until = max(
+            cls._blocked_until,
+            time.monotonic() + seconds,
+        )
 
-    # ==========================================================
-    # GDELT REQUEST
-    # ==========================================================
+    @classmethod
+    def _log_failure_once(cls, message: str) -> None:
+        now = time.monotonic()
+        if now - cls._last_failure_log >= 60:
+            logger.warning(message)
+            cls._last_failure_log = now
 
     def _request(self) -> dict[str, Any]:
-
         params = {
             "query": self.QUERY,
             "mode": "artlist",
             "format": "json",
             "maxrecords": self.MAX_RECORDS,
-            "timespan": self.TIMESpan,
+            "timespan": "24h",
             "sort": "datedesc",
         }
 
@@ -138,467 +97,180 @@ class MacroNewsProvider:
             timeout=self.REQUEST_TIMEOUT,
         )
 
+        if response.status_code == 429:
+            retry_after = response.headers.get("Retry-After")
+            try:
+                retry_seconds = int(retry_after) if retry_after else 0
+            except (TypeError, ValueError):
+                retry_seconds = 0
+
+            # Never trust an unrealistically small Retry-After for our app.
+            cooldown = max(
+                self.RATE_LIMIT_COOLDOWN_SECONDS,
+                retry_seconds,
+            )
+            self._set_cooldown(cooldown)
+            raise RuntimeError(
+                f"GDELT rate limited (429); retry suppressed for {cooldown}s."
+            )
+
         response.raise_for_status()
 
-        # GDELT can occasionally return an empty or
-        # non-JSON response.
         if not response.text.strip():
-
-            raise RuntimeError(
-                "GDELT returned an empty response."
-            )
+            self._set_cooldown(self.ERROR_COOLDOWN_SECONDS)
+            raise RuntimeError("GDELT returned an empty response.")
 
         try:
-
             payload = response.json()
-
         except ValueError as ex:
+            self._set_cooldown(self.ERROR_COOLDOWN_SECONDS)
+            raise RuntimeError("GDELT returned invalid JSON.") from ex
 
-            raise RuntimeError(
-                "GDELT returned invalid JSON."
-            ) from ex
-
-        if not isinstance(
-            payload,
-            dict,
-        ):
-
-            raise RuntimeError(
-                "GDELT returned an unexpected response."
-            )
+        if not isinstance(payload, dict):
+            self._set_cooldown(self.ERROR_COOLDOWN_SECONDS)
+            raise RuntimeError("GDELT returned an unexpected response.")
 
         return payload
 
-    # ==========================================================
-    # DATETIME
-    # ==========================================================
-
     @staticmethod
-    def _parse_datetime(value):
-
+    def _parse_datetime(value: Any):
         if not value:
             return None
 
         value = str(value).strip()
-
-        formats = [
+        formats = (
             "%Y%m%dT%H%M%SZ",
             "%Y%m%d%H%M%S",
             "%Y-%m-%dT%H:%M:%SZ",
             "%Y-%m-%dT%H:%M:%S%z",
-        ]
+        )
 
         for fmt in formats:
-
             try:
-
-                parsed = datetime.strptime(
-                    value,
-                    fmt,
-                )
-
+                parsed = datetime.strptime(value, fmt)
                 if parsed.tzinfo is None:
-
-                    parsed = parsed.replace(
-                        tzinfo=timezone.utc
-                    )
-
-                return parsed.astimezone(
-                    timezone.utc
-                )
-
+                    parsed = parsed.replace(tzinfo=timezone.utc)
+                return parsed.astimezone(timezone.utc)
             except ValueError:
-
                 continue
-
         return None
 
-    # ==========================================================
-    # CURRENCY DETECTION
-    # ==========================================================
-
     @staticmethod
-    def _detect_currency(
-        title: str,
-        domain: str,
-    ) -> str:
-
-        text = (
-            f"{title} {domain}"
-        ).lower()
-
-        gbp_terms = [
-            "bank of england",
-            "boe",
-            "united kingdom",
-            "uk ",
-            "britain",
-            "british",
-            "pound",
-            "sterling",
-            "gbp",
-        ]
-
-        usd_terms = [
-            "federal reserve",
-            "fomc",
-            "fed ",
-            "united states",
-            "us ",
-            "american",
-            "dollar",
-            "usd",
-        ]
-
-        gbp_score = sum(
-            1
-            for term in gbp_terms
-            if term in text
+    def _detect_currency(title: str, domain: str) -> str:
+        text = f"{title} {domain}".lower()
+        gbp_terms = (
+            "bank of england", "boe", "united kingdom", "uk ",
+            "britain", "british", "pound", "sterling", "gbp",
         )
-
-        usd_score = sum(
-            1
-            for term in usd_terms
-            if term in text
+        usd_terms = (
+            "federal reserve", "fomc", "fed ", "united states", "us ",
+            "american", "dollar", "usd",
         )
-
+        gbp_score = sum(term in text for term in gbp_terms)
+        usd_score = sum(term in text for term in usd_terms)
         if gbp_score > usd_score:
-
             return "GBP"
-
         if usd_score > gbp_score:
-
             return "USD"
-
         return "USD/GBP"
 
-    # ==========================================================
-    # IMPACT DETECTION
-    # ==========================================================
-
     @staticmethod
-    def _detect_impact(
-        title: str,
-    ) -> str:
-
+    def _detect_impact(title: str) -> str:
         title_lower = title.lower()
-
-        high_terms = [
-            "federal reserve",
-            "fomc",
-            "interest rate",
-            "rate decision",
-            "bank of england",
-            "boe",
-            "cpi",
-            "inflation",
-            "pce",
-            "nonfarm payroll",
-            "nfp",
-            "unemployment",
-            "gdp",
-        ]
-
-        medium_terms = [
-            "retail sales",
-            "jobless claims",
-            "pmi",
-            "employment",
-            "wages",
-            "consumer confidence",
-            "consumer sentiment",
-            "manufacturing",
-            "services",
-        ]
-
-        for term in high_terms:
-
-            if term in title_lower:
-
-                return "HIGH"
-
-        for term in medium_terms:
-
-            if term in title_lower:
-
-                return "MEDIUM"
-
+        high_terms = (
+            "federal reserve", "fomc", "interest rate", "rate decision",
+            "bank of england", "boe", "cpi", "inflation", "pce", "nonfarm payroll",
+            "nfp", "unemployment", "gdp",
+        )
+        medium_terms = (
+            "retail sales", "jobless claims", "pmi", "employment", "wages",
+            "consumer confidence", "consumer sentiment", "manufacturing", "services",
+        )
+        if any(term in title_lower for term in high_terms):
+            return "HIGH"
+        if any(term in title_lower for term in medium_terms):
+            return "MEDIUM"
         return "LOW"
 
-    # ==========================================================
-    # NORMALIZE ARTICLE
-    # ==========================================================
-
-    def _normalize_article(
-        self,
-        article: dict[str, Any],
-    ) -> dict[str, Any] | None:
-
-        if not isinstance(
-            article,
-            dict,
-        ):
-
+    def _normalize_article(self, article: dict[str, Any]) -> dict[str, Any] | None:
+        if not isinstance(article, dict):
             return None
 
-        title = str(
-            article.get(
-                "title",
-                "",
-            )
-        ).strip()
-
+        title = str(article.get("title", "")).strip()
         if not title:
-
             return None
-
-        published_raw = (
-            article.get("seendate")
-            or article.get("published")
-            or article.get("date")
-        )
 
         published = self._parse_datetime(
-            published_raw
+            article.get("seendate") or article.get("published") or article.get("date")
         )
-
         if published is None:
-
             return None
 
-        url = str(
-            article.get(
-                "url",
-                "",
-            )
-        ).strip()
-
-        domain = str(
-            article.get(
-                "domain",
-                "",
-            )
-        ).strip()
-
-        language = str(
-            article.get(
-                "language",
-                "",
-            )
-        ).strip()
-
-        currency = (
-            self._detect_currency(
-                title=title,
-                domain=domain,
-            )
-        )
-
-        impact = self._detect_impact(
-            title
-        )
+        url = str(article.get("url", "")).strip()
+        domain = str(article.get("domain", "")).strip()
+        language = str(article.get("language", "")).strip()
 
         return {
-            "id": url,
-
+            "id": url or title,
             "title": title,
-
-            "currency": currency,
-
-            "impact": impact,
-
-            "published": (
-                published.isoformat()
-            ),
-
+            "currency": self._detect_currency(title, domain),
+            "impact": self._detect_impact(title),
+            "published": published.isoformat(),
             "source": domain,
-
             "url": url,
-
             "language": language,
         }
 
-    # ==========================================================
-    # DEDUPLICATION
-    # ==========================================================
-
     @staticmethod
-    def _deduplicate(
-        articles: list[
-            dict[str, Any]
-        ],
-    ) -> list[
-        dict[str, Any]
-    ]:
-
-        seen = set()
-
-        result = []
-
+    def _deduplicate(articles: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        seen: set[str] = set()
+        result: list[dict[str, Any]] = []
         for article in articles:
-
-            key = (
-                article.get("url")
-                or article.get(
-                    "title",
-                    "",
-                ).lower()
-            )
-
-            if not key:
-
+            key = str(article.get("url") or article.get("title", "")).lower()
+            if not key or key in seen:
                 continue
-
-            if key in seen:
-
-                continue
-
             seen.add(key)
-
             result.append(article)
-
         return result
 
-    # ==========================================================
-    # CACHE CHECK
-    # ==========================================================
+    def get_news(self, timespan: str = "24h") -> list[dict[str, Any]]:
+        # Fast path: normal dashboard polling is served entirely from cache.
+        with self._lock:
+            if self._cache_is_fresh():
+                return list(self._cache)
 
-    def _cache_is_fresh(self) -> bool:
-
-        if not self._cached_articles:
-
-            return False
-
-        age = (
-            time.monotonic()
-            - self._last_successful_fetch
-        )
-
-        return age < self.CACHE_SECONDS
-
-    # ==========================================================
-    # GET NEWS
-    # ==========================================================
-
-    def get_news(
-        self,
-        timespan: str = "24h",
-    ) -> list[dict[str, Any]]:
-
-        # ------------------------------------------------------
-        # IMPORTANT:
-        #
-        # If the cache is still fresh, DO NOT call GDELT.
-        #
-        # This means your frontend can request PAL every
-        # 5 seconds without hammering the external provider.
-        # ------------------------------------------------------
-
-        if self._cache_is_fresh():
-
-            return list(
-                self._cached_articles
-            )
-
-        # ------------------------------------------------------
-        # Fetch fresh news
-        # ------------------------------------------------------
+            # Critical fix: once GDELT rate-limits us, do not hammer it again
+            # every 5 seconds. PALService will use its Google News fallback.
+            if self._blocked():
+                return list(self._cache)
 
         try:
-
             payload = self._request()
+            raw_articles = payload.get("articles", [])
+            if not isinstance(raw_articles, list):
+                self._set_cooldown(self.ERROR_COOLDOWN_SECONDS)
+                raise RuntimeError("GDELT returned no article list.")
 
-            raw_articles = payload.get(
-                "articles",
-                [],
-            )
-
-            if not isinstance(
-                raw_articles,
-                list,
-            ):
-
-                raise RuntimeError(
-                    "GDELT returned no article list."
-                )
-
-            articles = []
-
-            for raw_article in raw_articles:
-
-                normalized = (
-                    self._normalize_article(
-                        raw_article
-                    )
-                )
-
-                if normalized is not None:
-
-                    articles.append(
-                        normalized
-                    )
-
-            articles = self._deduplicate(
-                articles
-            )
-
-            # Newest first.
-            articles.sort(
-                key=lambda article: article.get(
-                    "published",
-                    "",
-                ),
-                reverse=True,
-            )
-
-            # Keep the dashboard compact.
+            articles = [
+                normalized
+                for raw in raw_articles
+                if (normalized := self._normalize_article(raw)) is not None
+            ]
+            articles = self._deduplicate(articles)
+            articles.sort(key=lambda item: item.get("published", ""), reverse=True)
             articles = articles[:15]
 
-            # --------------------------------------------------
-            # Only replace the cache after a SUCCESSFUL request.
-            # --------------------------------------------------
+            with self._lock:
+                self._cache = articles
+                self._last_successful_fetch = time.monotonic()
+                self._blocked_until = 0.0
 
-            self._cached_articles = articles
-
-            self._last_successful_fetch = (
-                time.monotonic()
-            )
-
-            logger.info(
-                "GDELT macro news refreshed: %s articles",
-                len(articles),
-            )
-
-            return list(
-                self._cached_articles
-            )
+            logger.info("GDELT macro news refreshed: %s articles", len(articles))
+            return list(articles)
 
         except Exception as ex:
-
-            # --------------------------------------------------
-            # IMPORTANT:
-            #
-            # If GDELT fails, return the previous successful
-            # cache instead of destroying it.
-            # --------------------------------------------------
-
-            logger.warning(
-                "GDELT news refresh failed: %s",
-                ex,
-            )
-
-            if self._cached_articles:
-
-                logger.info(
-                    "Using cached GDELT news: %s articles",
-                    len(
-                        self._cached_articles
-                    ),
-                )
-
-                return list(
-                    self._cached_articles
-                )
-
-            # No successful fetch yet.
-            return []
+            # Keep the last good GDELT data. If there is none, return [] so
+            # PALService can immediately use Google News instead.
+            self._log_failure_once(f"GDELT news refresh failed: {ex}")
+            with self._lock:
+                return list(self._cache)
