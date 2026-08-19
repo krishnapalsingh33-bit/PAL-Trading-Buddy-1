@@ -35,8 +35,8 @@ main button{transition:transform .16s ease,box-shadow .16s ease,border-color .16
 .pal-dashboard main>div>section:nth-child(3)>div:nth-child(2) .relative.overflow-hidden::after{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(110deg,transparent 35%,rgba(39,245,208,.055) 50%,transparent 65%);transform:translateX(-130%);animation:pal-quote-sweep 8s ease-in-out infinite}
 @keyframes pal-quote-sweep{0%,55%{transform:translateX(-130%);opacity:0}65%{opacity:1}82%,100%{transform:translateX(130%);opacity:0}}
 .pal-dashboard main>div>section:nth-child(4){animation:pal-page-enter .5s cubic-bezier(.22,1,.36,1) .18s both}
-/* Only the PAL Trading Buddy hero/session section: subtle ambient glow, no layout changes. */
+/* Dashboard hero ambient glow */
 .pal-dashboard main>div>section:first-child{position:relative;isolation:isolate}
-.pal-dashboard main>div>section:first-child::after{content:"";position:absolute;inset:-1px;border-radius:22px;pointer-events:none;z-index:-1;background:radial-gradient(circle at 78% 22%,rgba(39,245,208,.16),transparent 42%);opacity:.22;animation:pal-hero-glow 6s ease-in-out infinite}
-@keyframes pal-hero-glow{0%,100%{opacity:.14;transform:scale(.995)}50%{opacity:.34;transform:scale(1.005)}}
+.pal-dashboard main>div>section:first-child::after{content:"";position:absolute;inset:-3px;border-radius:22px;pointer-events:none;z-index:-1;background:radial-gradient(circle at 78% 22%,rgba(39,245,208,.22),transparent 42%);filter:blur(10px);opacity:.22;animation:pal-hero-glow 6s ease-in-out infinite}
+@keyframes pal-hero-glow{0%,100%{opacity:.14;transform:scale(.99)}50%{opacity:.42;transform:scale(1.012)}}
 @media(prefers-reduced-motion:reduce){.pal-dashboard *, .pal-dashboard::before,.pal-dashboard::after,main>section,main>article{animation:none!important;transition:none!important}}
