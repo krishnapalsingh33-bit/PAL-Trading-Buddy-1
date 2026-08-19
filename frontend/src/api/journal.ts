@@ -1,7 +1,7 @@
 import axios from "axios";
 
 const journalApi = axios.create({
-    baseURL: "http://127.0.0.1:8000",
+    baseURL: import.meta.env.VITE_MT5_API_URL || import.meta.env.VITE_PAL_API_URL || "http://127.0.0.1:8000",
     timeout: 30000,
 });
 
