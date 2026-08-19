@@ -4,11 +4,10 @@ import {
   GoogleAuthProvider,
   browserLocalPersistence,
   createUserWithEmailAndPassword,
-  getRedirectResult,
   onAuthStateChanged,
   setPersistence,
   signInWithEmailAndPassword,
-  signInWithRedirect,
+  signInWithPopup,
 } from "firebase/auth";
 import type { User as FirebaseUser } from "firebase/auth";
 import { auth, firebaseConfigured } from "./firebase";
@@ -30,44 +29,10 @@ export default function AuthGate({ children }: { children: ReactNode }) {
       return;
     }
 
-    let active = true;
-
-    const unsubscribe = onAuthStateChanged(firebaseAuth, (u) => {
-      if (!active) return;
+    return onAuthStateChanged(firebaseAuth, (u) => {
       setUser(u);
       setLoading(false);
     });
-
-    const finishRedirect = async () => {
-      try {
-        await setPersistence(firebaseAuth, browserLocalPersistence);
-        const result = await getRedirectResult(firebaseAuth);
-
-        if (!active) return;
-
-        if (result?.user) {
-          setUser(result.user);
-          setError("");
-        }
-      } catch (e: any) {
-        if (!active) return;
-
-        setError(
-          e?.code === "auth/unauthorized-domain"
-            ? "This PAL domain is not authorized in Firebase Authentication."
-            : e?.message ?? "Google sign-in failed."
-        );
-      } finally {
-        if (active) setLoading(false);
-      }
-    };
-
-    void finishRedirect();
-
-    return () => {
-      active = false;
-      unsubscribe();
-    };
   }, []);
 
   if (!firebaseConfigured) return <SetupScreen />;
@@ -93,14 +58,23 @@ export default function AuthGate({ children }: { children: ReactNode }) {
 
     try {
       await setPersistence(firebaseAuth, browserLocalPersistence);
-      await signInWithRedirect(firebaseAuth, new GoogleAuthProvider());
+      const result = await signInWithPopup(
+        firebaseAuth,
+        new GoogleAuthProvider(),
+      );
+      setUser(result.user);
     } catch (e: any) {
-      setBusy(false);
       setError(
         e?.code === "auth/unauthorized-domain"
           ? "This PAL domain is not authorized in Firebase Authentication."
-          : e?.message ?? "Google sign-in failed."
+          : e?.code === "auth/popup-blocked"
+            ? "Google sign-in popup was blocked by the browser."
+            : e?.code === "auth/popup-closed-by-user"
+              ? "Google sign-in was closed before completion."
+              : e?.message ?? "Google sign-in failed."
       );
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -116,9 +90,19 @@ export default function AuthGate({ children }: { children: ReactNode }) {
       await setPersistence(firebaseAuth, browserLocalPersistence);
 
       if (mode === "signin") {
-        await signInWithEmailAndPassword(firebaseAuth, email, password);
+        const result = await signInWithEmailAndPassword(
+          firebaseAuth,
+          email,
+          password,
+        );
+        setUser(result.user);
       } else {
-        await createUserWithEmailAndPassword(firebaseAuth, email, password);
+        const result = await createUserWithEmailAndPassword(
+          firebaseAuth,
+          email,
+          password,
+        );
+        setUser(result.user);
       }
     } catch (e: any) {
       setError(
