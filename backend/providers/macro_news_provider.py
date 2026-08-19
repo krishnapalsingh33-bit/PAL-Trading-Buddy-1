@@ -27,10 +27,13 @@ class MacroNewsProvider:
     # Keep this deliberately compact. GDELT supports Boolean OR blocks, but a
     # very large query can be rejected as invalid. Broad coverage comes from
     # the independent Google News feed plus this focused macro query.
+    # The explicit AND is important: GDELT query operators are expressed in
+    # the QUERY field and Boolean blocks should be joined explicitly.
     QUERY = (
         '("Federal Reserve" OR FOMC OR "Bank of England" OR BoE OR '
         'inflation OR NFP OR GDP OR PMI OR "retail sales" OR '
         '"rate decision" OR "rate cut" OR "rate hike") '
+        'AND '
         '(USD OR GBP OR dollar OR pound OR sterling)'
     )
 
@@ -38,7 +41,7 @@ class MacroNewsProvider:
         self.session = requests.Session()
         self.session.headers.update(
             {
-                "User-Agent": "PAL-Trading-Buddy/2.4 (macro intelligence)",
+                "User-Agent": "PAL-Trading-Buddy/2.5 (macro intelligence)",
                 "Accept": "application/json",
             }
         )
