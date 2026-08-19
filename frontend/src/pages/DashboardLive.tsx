@@ -18,7 +18,14 @@ export default function DashboardLive({ activePage = "dashboard", onPageChange }
     if (isLoading) return <div className="min-h-screen bg-[#050607] text-white p-8">Loading live PAL feed…</div>;
     if (error || !data?.report) return <div className="min-h-screen bg-[#050607] text-white flex items-center justify-center p-8"><div className="max-w-md rounded-2xl border border-red-400/20 bg-red-400/[0.04] p-7 text-center"><div className="text-xs uppercase tracking-[0.2em] text-red-300">Live feed error</div><h1 className="mt-3 text-2xl font-semibold">PAL cannot read the backend</h1><p className="mt-2 text-sm leading-6 text-zinc-500">Restart the backend API and reload this page. The dashboard will not invent market values.</p><button className="mt-5 rounded-xl border border-white/10 px-4 py-2 text-sm" onClick={() => window.location.reload()}>Retry</button></div></div>;
     const report: any = data.report; const macro = report.macro ?? {}; const markets = macro.markets ?? report.markets ?? report.market_data ?? {}; const todayBias = macro?.today_bias ?? report?.today_bias ?? {};
-    const todayDxy = normalizeBias(todayBias?.dxy?.bias); const todayGbp = normalizeBias(todayBias?.gbp?.bias); const todayGbpusd = normalizeBias(todayBias?.gbpusd?.bias ?? todayBias?.today?.bias);
+    const today = todayBias?.today ?? {};
+    // TODAY layer is primary. If the backend version does not yet expose the
+    // three component fields, fall back to the real macro/news model values
+    // instead of displaying UNKNOWN. This is still provider-backed evidence,
+    // not a fabricated directional value.
+    const todayDxy = normalizeBias(today?.dxy?.bias ?? todayBias?.dxy?.bias ?? macro?.dxy?.bias);
+    const todayGbp = normalizeBias(today?.gbp?.bias ?? todayBias?.gbp?.bias ?? macro?.gbp?.bias);
+    const todayGbpusd = normalizeBias(today?.gbpusd?.bias ?? todayBias?.gbpusd?.bias ?? today?.bias ?? macro?.gbpusd?.bias);
     const dxy = normalizeBias(macro?.dxy?.bias); const gbp = normalizeBias(macro?.gbp?.bias); const gbpusd = normalizeBias(macro?.gbpusd?.bias);
     const marketEntries = [["DXY", ["DXY"]], ["GBP/USD", ["GBPUSD", "GBP/USD"]], ["Gold", ["XAUUSD", "GOLD", "XAU/USD"]], ["WTI", ["USOIL", "WTI", "OIL", "XTIUSD"]], ["US 10Y", ["US10Y", "10Y", "TNX"]], ["US500", ["US500", "SPX", "SP500"]]].map(([label, keys]) => { const source = Array.isArray(markets) ? markets.find((item: any) => keys.some((key: string) => String(item?.symbol ?? item?.ticker ?? "").toUpperCase() === key.toUpperCase())) : keys.map((key: string) => markets?.[key]).find(Boolean); return { label, quote: source ?? {} }; });
     const liveCount = marketEntries.filter(({ quote }) => String(quote.status ?? "").toUpperCase() === "CURRENT").length; const sessionsOpen = Object.values(sessions).filter(Boolean).length;
