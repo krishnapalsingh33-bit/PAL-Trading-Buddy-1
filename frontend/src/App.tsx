@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import Dashboard from "./pages/Dashboard";
 import JournalProfessional from "./pages/JournalProfessional";
 import JournalScreenshots from "./components/journal/JournalScreenshots";
@@ -18,7 +19,7 @@ function Workspace(){
  const [page,setPage]=useState<AppPage>(getPageFromHash);
  useEffect(()=>{const h=()=>setPage(getPageFromHash());window.addEventListener("hashchange",h);return()=>window.removeEventListener("hashchange",h)},[]);
  const navigate=(next:AppPage)=>{const hash=`#${next}`;if(window.location.hash!==hash)window.location.hash=hash;else setPage(next)};
- let content: React.ReactNode;
+ let content: ReactNode;
  if(page==="journal")content=<PalPageShell page="journal" onPageChange={navigate}><JournalProfessional/><JournalScreenshots/></PalPageShell>;
  else if(page==="macro-desk")content=<MacroDesk onPageChange={navigate}/>;
  else if(page==="macro-view")content=<MacroViewPremium onPageChange={navigate}/>;
