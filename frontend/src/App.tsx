@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import DashboardLive from "./pages/DashboardLive";
+import DashboardReference from "./pages/DashboardReference";
 import JournalProfessional from "./pages/JournalProfessional";
 import JournalScreenshots from "./components/journal/JournalScreenshots";
 import MacroDesk from "./pages/MacroDesk";
@@ -41,7 +41,7 @@ function App() {
     if (page === "macro-view") return <MacroViewPremium onPageChange={navigate} />;
     if (page === "macro-calendar") return <MacroCalendar onPageChange={navigate} />;
     if (page === "reports") return <DailyReports onPageChange={navigate} />;
-    return <DashboardLive activePage="dashboard" onPageChange={navigate} />;
+    return <DashboardReference />;
 }
 
 export default App;
