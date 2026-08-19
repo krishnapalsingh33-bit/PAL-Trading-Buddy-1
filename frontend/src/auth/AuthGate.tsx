@@ -23,14 +23,16 @@ export default function AuthGate({ children }: { children: ReactNode }) {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (!auth) {
+    const firebaseAuth = auth;
+
+    if (!firebaseAuth) {
       setLoading(false);
       return;
     }
 
     let active = true;
 
-    const unsubscribe = onAuthStateChanged(auth, (u) => {
+    const unsubscribe = onAuthStateChanged(firebaseAuth, (u) => {
       if (!active) return;
       setUser(u);
       setLoading(false);
@@ -38,10 +40,8 @@ export default function AuthGate({ children }: { children: ReactNode }) {
 
     const finishRedirect = async () => {
       try {
-        // Explicit local persistence keeps the authenticated session across
-        // the full-page Google redirect on production domains.
-        await setPersistence(auth, browserLocalPersistence);
-        const result = await getRedirectResult(auth);
+        await setPersistence(firebaseAuth, browserLocalPersistence);
+        const result = await getRedirectResult(firebaseAuth);
 
         if (!active) return;
 
@@ -85,14 +85,15 @@ export default function AuthGate({ children }: { children: ReactNode }) {
   if (user) return <>{children}</>;
 
   const google = async () => {
-    if (!auth) return;
+    const firebaseAuth = auth;
+    if (!firebaseAuth) return;
 
     setBusy(true);
     setError("");
 
     try {
-      await setPersistence(auth, browserLocalPersistence);
-      await signInWithRedirect(auth, new GoogleAuthProvider());
+      await setPersistence(firebaseAuth, browserLocalPersistence);
+      await signInWithRedirect(firebaseAuth, new GoogleAuthProvider());
     } catch (e: any) {
       setBusy(false);
       setError(
@@ -105,18 +106,19 @@ export default function AuthGate({ children }: { children: ReactNode }) {
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!auth) return;
+    const firebaseAuth = auth;
+    if (!firebaseAuth) return;
 
     setBusy(true);
     setError("");
 
     try {
-      await setPersistence(auth, browserLocalPersistence);
+      await setPersistence(firebaseAuth, browserLocalPersistence);
 
       if (mode === "signin") {
-        await signInWithEmailAndPassword(auth, email, password);
+        await signInWithEmailAndPassword(firebaseAuth, email, password);
       } else {
-        await createUserWithEmailAndPassword(auth, email, password);
+        await createUserWithEmailAndPassword(firebaseAuth, email, password);
       }
     } catch (e: any) {
       setError(
