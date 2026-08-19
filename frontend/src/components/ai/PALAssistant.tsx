@@ -20,9 +20,6 @@ export default function PALAssistant({ context, title = "PAL Intelligence", subt
   const endRef = useRef<HTMLDivElement | null>(null);
   const tone = ACCENT[accent];
 
-  // Keep the payload valid JSON. The previous implementation sliced the JSON string
-  // at 28k characters and then JSON.parse()'d the truncated string, which caused the
-  // exact "Unterminated string in JSON" error shown in the assistant panel.
   const contextPayload = useMemo(() => {
     const source = context as Record<string, any>;
     const compact: Record<string, any> = { ...source };
@@ -36,6 +33,9 @@ export default function PALAssistant({ context, title = "PAL Intelligence", subt
     }
     return compact;
   }, [context]);
+
+  const usedPrompts = useMemo(() => new Set(messages.filter((message) => message.role === "user").map((message) => message.text)), [messages]);
+  const followUpPrompts = useMemo(() => quickPrompts.filter((prompt) => !usedPrompts.has(prompt)).slice(0, 4), [quickPrompts, usedPrompts]);
 
   useEffect(() => { if (open) endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, open]);
 
@@ -59,8 +59,10 @@ export default function PALAssistant({ context, title = "PAL Intelligence", subt
   return <>
     {open ? <div className="fixed bottom-5 right-5 z-[260] w-[min(420px,calc(100vw-24px))] overflow-hidden rounded-3xl border border-white/10 bg-[#07100f]/95 shadow-[0_30px_100px_rgba(0,0,0,.65)] backdrop-blur-xl">
       <div className={`border-b border-white/[.07] ${tone.header} px-4 py-3`}><div className="flex items-center justify-between gap-3"><div><div className={`text-[9px] font-bold uppercase tracking-[.22em] ${tone.label}`}>{title}</div><div className="mt-1 text-[10px] text-zinc-500">{subtitle}</div></div><button type="button" onClick={() => setOpen(false)} className="h-8 w-8 rounded-xl border border-white/[.07] text-zinc-500 hover:text-white">×</button></div></div>
-      <div className="max-h-[430px] min-h-[210px] space-y-3 overflow-y-auto p-4">{!messages.length ? <div className="rounded-2xl border border-white/[.06] bg-white/[.02] p-4"><div className="text-sm font-semibold text-white">Evidence-first assistant</div><p className="mt-2 text-[11px] leading-5 text-zinc-500">I use PAL's current market, macro, news and journal context. I will say when the data is insufficient instead of inventing a bias.</p><div className="mt-4 flex flex-wrap gap-2">{quickPrompts.slice(0,4).map(prompt=><button key={prompt} type="button" onClick={()=>void ask(prompt)} className={`rounded-full border px-3 py-1.5 text-[9px] ${tone.chip}`}>{prompt}</button>)}</div></div> : null}
+      <div className="max-h-[430px] min-h-[210px] space-y-3 overflow-y-auto p-4">
+        {!messages.length ? <div className="rounded-2xl border border-white/[.06] bg-white/[.02] p-4"><div className="text-sm font-semibold text-white">Evidence-first assistant</div><p className="mt-2 text-[11px] leading-5 text-zinc-500">I use PAL's current market, macro, news and journal context. I will say when the data is insufficient instead of inventing a bias.</p><div className="mt-4 flex flex-wrap gap-2">{quickPrompts.slice(0,4).map(prompt=><button key={prompt} type="button" onClick={()=>void ask(prompt)} className={`rounded-full border px-3 py-1.5 text-[9px] ${tone.chip}`}>{prompt}</button>)}</div></div> : null}
         {messages.map((message,index)=><div key={`${message.role}-${index}`} className={`flex ${message.role==="user"?"justify-end":"justify-start"}`}><div className={`max-w-[88%] rounded-2xl px-3.5 py-3 text-[11px] leading-5 ${message.role==="user"?tone.user:"border border-white/[.06] bg-white/[.025] text-zinc-300"}`}>{message.text}</div></div>)}
+        {!loading && messages.length > 0 && followUpPrompts.length > 0 ? <div className="pt-1"><div className="mb-2 text-[8px] uppercase tracking-[.18em] text-zinc-700">Continue with PAL</div><div className="flex flex-wrap gap-2">{followUpPrompts.map(prompt=><button key={prompt} type="button" onClick={()=>void ask(prompt)} className={`rounded-full border px-3 py-1.5 text-[9px] ${tone.chip}`}>{prompt}</button>)}</div></div> : null}
         {loading ? <div className="text-[10px] text-zinc-600"><span className="mr-2 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-300"/>PAL is reading the current evidence…</div> : null}<div ref={endRef}/>
       </div>
       {error ? <div className="border-t border-red-300/10 bg-red-300/[.03] px-4 py-2 text-[9px] text-red-300/80">{error}</div> : null}
