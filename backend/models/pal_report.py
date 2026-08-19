@@ -9,6 +9,7 @@ class PALReport:
 
     PAL is focused on:
     - macro market context
+    - TODAY-only current-day bias
     - important economic events
     - recent macro catalysts
     - market risks
@@ -22,13 +23,19 @@ class PALReport:
     # ==========================================================
 
     symbol: str = ""
-
     timestamp: str = ""
-
     success: bool = True
 
     # ==========================================================
-    # Macro Intelligence
+    # TODAY — independent current-day intelligence
+    # ==========================================================
+
+    today: dict[str, Any] = field(
+        default_factory=dict
+    )
+
+    # ==========================================================
+    # Macro Intelligence — broader regime
     # ==========================================================
 
     macro: dict[str, Any] = field(
@@ -40,5 +47,29 @@ class PALReport:
     # ==========================================================
 
     news: dict[str, Any] = field(
+        default_factory=dict
+    )
+
+    # ==========================================================
+    # Optional compatibility/report fields
+    # ==========================================================
+
+    market_health: dict[str, Any] = field(
+        default_factory=dict
+    )
+
+    pal: dict[str, Any] = field(
+        default_factory=dict
+    )
+
+    execution: dict[str, Any] = field(
+        default_factory=dict
+    )
+
+    ai_commentary: dict[str, Any] = field(
+        default_factory=dict
+    )
+
+    summary: dict[str, Any] = field(
         default_factory=dict
     )
