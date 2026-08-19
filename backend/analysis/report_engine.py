@@ -1,3 +1,4 @@
+from copy import deepcopy
 from datetime import datetime
 from typing import Any
 
@@ -45,10 +46,14 @@ class ReportEngine:
             "gbp": gbp_news,
             "cross": cross_news,
             "macro_bias": macro_bias,
-            "today_bias": today_bias,
+            "today_bias": deepcopy(today_bias),
             "markets": markets,
             "macro_data": macro_data,
         }
+
+        # TODAY is a first-class report layer. It must never be inferred from
+        # or overwritten by the broader macro regime.
+        report.today = deepcopy(today_bias)
 
         report.macro = {
             "headline": self._build_macro_headline(news, headlines, upcoming_events),
@@ -79,7 +84,8 @@ class ReportEngine:
                 "bullish": gbpusd_bias.get("bias") in ["BULLISH", "LEAN_BULLISH"],
                 "bearish": gbpusd_bias.get("bias") in ["BEARISH", "LEAN_BEARISH"],
             },
-            "today_bias": today_bias,
+            # Retain this compatibility field, but it is only a reference copy.
+            "today_bias": deepcopy(today_bias),
             "events": upcoming_events,
             "news": headlines,
             "usd_news": usd_news,
@@ -98,7 +104,7 @@ class ReportEngine:
             "news": {"summary": news.get("summary", ""), "upcoming_events": upcoming_events, "key_risk": key_risk, "headlines": headlines, "usd": usd_news, "gbp": gbp_news, "cross": cross_news},
             "dxy": {"trend": dxy_bias.get("bias", "UNKNOWN")},
             "macro_bias": {"dxy": dxy_bias, "gbp": gbp_bias, "gbpusd": gbpusd_bias, "confidence": overall_confidence, "summary": bias_summary},
-            "today_bias": today_bias,
+            "today_bias": deepcopy(today_bias),
             "markets": markets,
             "macro_data": macro_data,
         }
