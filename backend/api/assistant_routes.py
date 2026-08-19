@@ -33,6 +33,12 @@ def _journal_trades(context: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _journal_answer(question: str, context: dict[str, Any]) -> str | None:
+    # Journal analysis is allowed only when the current page is Journal and the
+    # current question is actually about trades. This prevents Dashboard chats
+    # from accidentally falling into the journal fallback.
+    if str(context.get("page") or "dashboard") != "journal":
+        return None
+
     q = question.lower()
     journal_intent = any(x in q for x in (
         "journal", "trade history", "recent trades", "completed trades", "my trades",
@@ -107,32 +113,53 @@ def _fallback(question: str, context: dict[str, Any]) -> str:
     pair = _bias((macro.get("gbpusd") or {}).get("bias"))
     dxy = _bias((macro.get("dxy") or {}).get("bias"))
     gbp = _bias((macro.get("gbp") or {}).get("bias"))
-    summary = str(macro.get("summary") or "No current macro summary is available.")
-    news = macro.get("news") or []
-    events = macro.get("events") or []
+    summary = str(macro.get("summary") or context.get("summary") or "No current macro summary is available.")
+    news = context.get("news") or macro.get("news") or []
+    events = context.get("events") or macro.get("events") or []
     q = question.lower()
 
-    if any(x in q for x in ("brief", "today", "what matters", "what should i watch", "where should i look", "what to watch")):
+    # Keep intent routing mutually exclusive so different questions produce
+    # different answers even when the OpenAI provider is temporarily unavailable.
+    if any(x in q for x in ("news", "headline", "headlines", "what happened", "latest")):
+        headlines = []
+        for item in news[:5] if isinstance(news, list) else []:
+            if isinstance(item, dict):
+                title = item.get("title") or item.get("headline") or item.get("name")
+                if title:
+                    headlines.append(str(title))
+        if headlines:
+            return f"News relevant to the current PAL view: " + "; ".join(headlines) + f". Current GBP/USD bias is {pair}; DXY is {dxy}."
+        return f"No news headlines were supplied to PAL right now. The current macro view is GBP/USD {pair}, DXY {dxy}, GBP {gbp}. {summary}"
+
+    if any(x in q for x in ("calendar", "event", "events", "economic release", "what data")):
+        titles = []
+        for item in events[:6] if isinstance(events, list) else []:
+            if isinstance(item, dict):
+                title = item.get("title") or item.get("name") or item.get("event")
+                if title:
+                    titles.append(str(title))
+        if titles:
+            return "Upcoming/current macro events in PAL: " + "; ".join(titles) + "."
+        return "No scheduled macro events were supplied to PAL in the current context."
+
+    if any(x in q for x in ("bias", "bullish", "bearish", "neutral", "direction")):
+        return f"Current evidence: GBP/USD {pair}, DXY {dxy}, GBP {gbp}. {summary} PAL keeps the bias neutral/unknown when the supplied evidence is not strong enough; it does not invent conviction."
+
+    if any(x in q for x in ("where should i look", "what should i watch", "what to watch", "watch today", "where to look")):
+        focus = "GBP/USD and DXY alignment first"
+        if events:
+            focus += ", then the highest-impact scheduled macro event"
+        if news:
+            focus += ", then news that can change GBP/USD or USD expectations"
+        return f"Today's evidence focus: {focus}. Current GBP/USD bias is {pair}; DXY is {dxy}."
+
+    if any(x in q for x in ("brief", "today", "what matters")):
         lines = [f"Today's PAL brief: GBP/USD is {pair}; DXY is {dxy}; GBP is {gbp}.", summary]
         if events:
             titles = [str(e.get("title") or e.get("name") or e.get("event") or "Macro event") for e in events[:4] if isinstance(e, dict)]
             if titles:
                 lines.append("Key scheduled events: " + "; ".join(titles))
-        if news:
-            lines.append("Recent news is available in the Macro Intelligence / News Stories panels.")
         return " ".join(lines)
-
-    if any(x in q for x in ("bias", "bullish", "bearish", "neutral", "direction")):
-        return f"Current evidence: GBP/USD {pair}, DXY {dxy}, GBP {gbp}. {summary} PAL keeps the bias neutral/unknown when the supplied evidence is not strong enough; it does not invent conviction."
-
-    if any(x in q for x in ("news", "headline", "event", "calendar")):
-        event_text = ""
-        if events:
-            titles = [str(e.get("title") or e.get("name") or e.get("event") or "Macro event") for e in events[:5] if isinstance(e, dict)]
-            if titles:
-                event_text = " Scheduled events: " + "; ".join(titles) + "."
-        news_text = " Recent news is available in PAL's supplied news context." if news else " No news items were supplied to PAL."
-        return f"News/event view: GBP/USD {pair}, DXY {dxy}, GBP {gbp}. {summary}{event_text}{news_text}"
 
     return f"Based on the supplied PAL evidence: GBP/USD {pair}, DXY {dxy}, GBP {gbp}. {summary} I need more specific market, news, or journal data to answer that question precisely."
 
@@ -142,9 +169,11 @@ def assistant(payload: AssistantRequest) -> dict[str, Any]:
     question = payload.question.strip()
     context = payload.context
     history = payload.history[-8:]
+    page = str(context.get("page") or "dashboard")
     system = (
         "You are PAL, an evidence-first AI trading intelligence assistant. "
         "Answer the user's CURRENT question, not the previous question. Never reuse a previous answer merely because the topic is similar. "
+        f"The user is currently on the {page} page. Stay within that page's supplied context. "
         "Use ONLY the supplied PAL context. Never fabricate prices, news, events, sources, or certainty. "
         "For journal/trade questions, compare the trade details against the supplied market/macro/news context and explicitly flag conflicts. "
         "For execution-quality questions, do not infer missing stop-loss, take-profit, setup, or rationale fields. "
