@@ -25,16 +25,18 @@ main button{transition:transform .16s ease,box-shadow .16s ease,border-color .16
 .pal-dashboard button{transition:transform .16s ease,box-shadow .16s ease,border-color .16s ease,background .16s ease}.pal-dashboard button:hover{transform:translateY(-1px);box-shadow:0 7px 22px rgba(0,0,0,.28),0 0 12px rgba(39,245,208,.04)}.pal-dashboard button:active{transform:translateY(0)}
 .pal-dashboard input,.pal-dashboard select,.pal-dashboard textarea{background:rgba(2,9,10,.75)!important;border-color:rgba(255,255,255,.08)!important;color:#eef4f4!important;outline:none}.pal-dashboard input:focus,.pal-dashboard select:focus,.pal-dashboard textarea:focus{border-color:rgba(39,245,208,.35)!important;box-shadow:0 0 0 3px rgba(39,245,208,.06)}
 .pal-dashboard::-webkit-scrollbar{width:7px;height:7px}.pal-dashboard::-webkit-scrollbar-track{background:#020708}.pal-dashboard::-webkit-scrollbar-thumb{background:linear-gradient(180deg,rgba(39,245,208,.3),rgba(39,245,208,.08));border-radius:999px}
-/* Dashboard-only premium motion: restrained ambient glow, live-status breathing, and a soft quote refresh cue. */
+/* Existing dashboard motion */
 .pal-dashboard main>div>section:first-child{animation:pal-hero-arrive .55s cubic-bezier(.22,1,.36,1) both,pal-hero-breathe 9s ease-in-out 1s infinite}
 @keyframes pal-hero-arrive{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 @keyframes pal-hero-breathe{0%,100%{box-shadow:0 25px 80px rgba(0,0,0,.35),0 0 0 rgba(39,245,208,0)}50%{box-shadow:0 25px 80px rgba(0,0,0,.35),0 0 28px rgba(39,245,208,.045)}}
-.pal-dashboard main>div>section:nth-child(2)>div{animation:pal-kpi-arrive .5s cubic-bezier(.22,1,.36,1) both;}
-.pal-dashboard main>div>section:nth-child(2)>div:nth-child(1){animation-delay:.08s}.pal-dashboard main>div>section:nth-child(2)>div:nth-child(2){animation-delay:.14s}.pal-dashboard main>div>section:nth-child(2)>div:nth-child(3){animation-delay:.20s}.pal-dashboard main>div>section:nth-child(2)>div:nth-child(4){animation-delay:.26s}
+.pal-dashboard main>div>section:nth-child(2)>div{animation:pal-kpi-arrive .5s cubic-bezier(.22,1,.36,1) both}.pal-dashboard main>div>section:nth-child(2)>div:nth-child(1){animation-delay:.08s}.pal-dashboard main>div>section:nth-child(2)>div:nth-child(2){animation-delay:.14s}.pal-dashboard main>div>section:nth-child(2)>div:nth-child(3){animation-delay:.20s}.pal-dashboard main>div>section:nth-child(2)>div:nth-child(4){animation-delay:.26s}
 @keyframes pal-kpi-arrive{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:translateY(0)}}
-.pal-dashboard main>div>section:nth-child(3)>div:nth-child(2) .relative.overflow-hidden{transition:transform .22s ease,box-shadow .22s ease,border-color .22s ease}
-.pal-dashboard main>div>section:nth-child(3)>div:nth-child(2) .relative.overflow-hidden:hover{transform:translateY(-2px);box-shadow:0 12px 32px rgba(0,0,0,.3),0 0 18px rgba(39,245,208,.035)}
+.pal-dashboard main>div>section:nth-child(3)>div:nth-child(2) .relative.overflow-hidden{transition:transform .22s ease,box-shadow .22s ease,border-color .22s ease}.pal-dashboard main>div>section:nth-child(3)>div:nth-child(2) .relative.overflow-hidden:hover{transform:translateY(-2px);box-shadow:0 12px 32px rgba(0,0,0,.3),0 0 18px rgba(39,245,208,.035)}
 .pal-dashboard main>div>section:nth-child(3)>div:nth-child(2) .relative.overflow-hidden::after{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(110deg,transparent 35%,rgba(39,245,208,.055) 50%,transparent 65%);transform:translateX(-130%);animation:pal-quote-sweep 8s ease-in-out infinite}
 @keyframes pal-quote-sweep{0%,55%{transform:translateX(-130%);opacity:0}65%{opacity:1}82%,100%{transform:translateX(130%);opacity:0}}
 .pal-dashboard main>div>section:nth-child(4){animation:pal-page-enter .5s cubic-bezier(.22,1,.36,1) .18s both}
+/* Only the PAL Trading Buddy hero/session section: subtle ambient glow, no layout changes. */
+.pal-dashboard main>div>section:first-child{position:relative;isolation:isolate}
+.pal-dashboard main>div>section:first-child::after{content:"";position:absolute;inset:-1px;border-radius:22px;pointer-events:none;z-index:-1;background:radial-gradient(circle at 78% 22%,rgba(39,245,208,.16),transparent 42%);opacity:.22;animation:pal-hero-glow 6s ease-in-out infinite}
+@keyframes pal-hero-glow{0%,100%{opacity:.14;transform:scale(.995)}50%{opacity:.34;transform:scale(1.005)}}
 @media(prefers-reduced-motion:reduce){.pal-dashboard *, .pal-dashboard::before,.pal-dashboard::after,main>section,main>article{animation:none!important;transition:none!important}}
