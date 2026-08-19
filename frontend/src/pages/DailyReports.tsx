@@ -143,10 +143,10 @@ export default function DailyReports({ onPageChange }: Props) {
         ["Trade setup", "Watch closely"],
     ];
 
-    const eventMetrics: Array<[string, unknown]> = [
-        ["Actual", events[0]?.actual],
-        ["Forecast", events[0]?.forecast],
-        ["Previous", events[0]?.previous],
+    const eventMetrics: Array<[string, string]> = [
+        ["Actual", text(events[0]?.actual)],
+        ["Forecast", text(events[0]?.forecast)],
+        ["Previous", text(events[0]?.previous)],
     ];
 
     return (
