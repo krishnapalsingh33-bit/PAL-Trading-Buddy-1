@@ -26,24 +26,25 @@ export default function PALAssistantDock() {
 
   const context = useMemo(() => ({
     page: isJournal ? "journal" : "dashboard",
+    // TODAY and MACRO are separate inputs. PAL must not infer TODAY from MACRO.
+    today: data?.report?.today ?? null,
     macro: data?.report?.macro ?? null,
     news: data?.report?.news ?? null,
     summary: data?.report?.summary ?? null,
     market_snapshot: data?.report?.macro?.markets ?? null,
-    // Never expose journal records to the dashboard assistant.
     journal: isJournal ? (journalQuery.data?.data?.trades ?? []) : undefined,
   }), [data, journalQuery.data, isJournal]);
 
   const prompts = isJournal
-    ? ["Review my trade history", "Which trades conflict with the market data?", "Track my execution quality", "Where was my execution weak?"]
-    : ["What is today's brief?", "What news matters today?", "Explain the current bias", "Where should I look today?"];
+    ? ["Review my trade history", "Which trades conflict with today's bias?", "Track my execution quality", "Where was my execution weak?"]
+    : ["What is today's brief?", "What news matters today?", "Explain today's bias", "What is the broader macro regime?"];
 
   return (
     <PALAssistant
       key={isJournal ? "journal-assistant" : "dashboard-assistant"}
       context={context}
       title="PAL Intelligence"
-      subtitle={isJournal ? "Ask about your trades and the market" : "Ask about today's live evidence"}
+      subtitle={isJournal ? "Ask about your trades and today's market evidence" : "Ask about today's live evidence or broader macro"}
       quickPrompts={prompts}
       accent={isJournal ? "emerald" : "cyan"}
     />
