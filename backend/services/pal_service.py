@@ -2,6 +2,7 @@ from datetime import datetime
 
 from analysis.news_engine import NewsEngine
 from analysis.macro_bias_engine import MacroBiasEngine
+from analysis.today_bias_engine import TodayBiasEngine
 from analysis.report_engine import ReportEngine
 from providers.google_news_provider import GoogleNewsProvider
 from providers.macro_news_provider import MacroNewsProvider
@@ -17,6 +18,7 @@ class PALService:
         self.google_news_provider = GoogleNewsProvider()
         self.gdelt_news_provider = MacroNewsProvider()
         self.macro_bias_engine = MacroBiasEngine()
+        self.today_bias_engine = TodayBiasEngine()
         self.report_engine = ReportEngine()
         self.market_data_service = MarketDataService()
         self.macro_data_service = MacroDataService()
@@ -64,7 +66,7 @@ class PALService:
         )
 
         try:
-            macro_bias = self.macro_bias_engine.analyze(news=news)
+            macro_bias = self.macro_bias_engine.analyze(news=news, now=current_time, symbol=symbol)
         except Exception as ex:
             print(f"Macro bias engine failed: {ex}")
             macro_bias = {
@@ -109,7 +111,32 @@ class PALService:
                 "fetched_at": None,
             }
 
+        # TODAY BIAS is deliberately calculated after live news/data collection.
+        # It is scoped to the current calendar day and session, not a weekly regime.
+        try:
+            today_bias = self.today_bias_engine.build(
+                macro_bias=macro_bias,
+                news={**news, "markets": markets, "macro_data": macro_data},
+                now=current_time,
+            )
+        except Exception as ex:
+            print(f"Today/session bias engine failed: {ex}
+")
+            today_bias = {
+                "today": {
+                    "bias": "UNKNOWN",
+                    "score": 0,
+                    "confidence": 0,
+                    "reasons": ["Today bias is temporarily unavailable."],
+                    "evidence_count": 0,
+                    "scope": "TODAY_ONLY",
+                },
+                "sessions": {},
+                "active_session": None,
+            }
+
         news["macro_bias"] = macro_bias
+        news["today_bias"] = today_bias
         news["markets"] = markets
         news["macro_data"] = macro_data
         news["news_sources"] = {
