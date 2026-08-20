@@ -24,7 +24,7 @@ def _bias(value: Any) -> str:
         return "BEARISH"
     if "NEUTRAL" in text:
         return "NEUTRAL"
-    return text
+    return text or "UNKNOWN"
 
 
 def _journal_trades(context: dict[str, Any]) -> list[dict[str, Any]]:
@@ -36,7 +36,15 @@ def _journal_answer(question: str, context: dict[str, Any]) -> str | None:
     if str(context.get("page") or "dashboard") != "journal":
         return None
     q = question.lower()
-    journal_intent = any(x in q for x in ("journal", "trade history", "recent trades", "completed trades", "my trades", "execution", "executions", "entry", "exit", "risk management", "discipline", "trade quality", "weak", "weakness", "best trade", "worst trade", "p&l", "profit", "loss"))
+    journal_intent = any(
+        x in q
+        for x in (
+            "journal", "trade history", "recent trades", "completed trades", "my trades",
+            "execution", "executions", "entry", "exit", "risk management", "discipline",
+            "trade quality", "weak", "weakness", "best trade", "worst trade", "p&l",
+            "profit", "loss",
+        )
+    )
     if not journal_intent:
         return None
     trades = _journal_trades(context)
@@ -56,17 +64,24 @@ def _journal_answer(question: str, context: dict[str, Any]) -> str | None:
     if any(x in q for x in ("conflict", "market data", "market alignment", "aligned", "alignment")):
         conflicts = []
         for trade in trades:
-            symbol = str(trade.get("symbol") or "").upper(); direction = str(trade.get("direction") or "").upper()
+            symbol = str(trade.get("symbol") or "").upper()
+            direction = str(trade.get("direction") or "").upper()
             if symbol in {"GBPUSD", "GBP/USD"} and direction:
-                if pair_bias == "BULLISH" and direction in {"SELL", "SHORT"}: conflicts.append(f"{symbol} {direction} trade conflicts with today's GBP/USD bullish bias")
-                elif pair_bias == "BEARISH" and direction in {"BUY", "LONG"}: conflicts.append(f"{symbol} {direction} trade conflicts with today's GBP/USD bearish bias")
-        if conflicts: return "Potential market-alignment conflicts found: " + "; ".join(conflicts) + f". Today's DXY bias: {dxy_bias}."
+                if pair_bias == "BULLISH" and direction in {"SELL", "SHORT"}:
+                    conflicts.append(f"{symbol} {direction} trade conflicts with today's GBP/USD bullish bias")
+                elif pair_bias == "BEARISH" and direction in {"BUY", "LONG"}:
+                    conflicts.append(f"{symbol} {direction} trade conflicts with today's GBP/USD bearish bias")
+        if conflicts:
+            return "Potential market-alignment conflicts found: " + "; ".join(conflicts) + f". Today's DXY bias: {dxy_bias}."
         return f"I don't see a direct GBP/USD direction conflict in the supplied trades. Today's GBP/USD bias is {pair_bias} and today's DXY bias is {dxy_bias}. This checks direction only; it cannot verify ICT/FVG/CISD rules because those fields are not present in the journal data."
     if any(x in q for x in ("execution", "weak", "weakness", "quality", "entry", "exit", "risk management", "discipline")):
         missing = [field for field in ("stop_loss", "take_profit", "comment") if not any(t.get(field) not in (None, "", 0) for t in trades)]
-        best = max(trades, key=lambda t: float(t.get("net_profit") or 0)); worst = min(trades, key=lambda t: float(t.get("net_profit") or 0))
+        best = max(trades, key=lambda t: float(t.get("net_profit") or 0))
+        worst = min(trades, key=lambda t: float(t.get("net_profit") or 0))
         result = f"Execution evidence: {len(trades)} trades, net P&L {net:.2f}. Best recorded trade: {best.get('symbol', 'unknown')} {best.get('direction', '')} ({float(best.get('net_profit') or 0):.2f}); worst: {worst.get('symbol', 'unknown')} {worst.get('direction', '')} ({float(worst.get('net_profit') or 0):.2f}). "
-        return result + (("The journal is missing " + ", ".join(missing) + ", so I cannot objectively score stop/target placement or the stated trade rationale.") if missing else "The available fields can be used for a more detailed execution review.")
+        if missing:
+            return result + "The journal is missing " + ", ".join(missing) + ", so I cannot objectively score stop/target placement or the stated trade rationale."
+        return result + "The available journal fields can be used for a more detailed execution review."
     return None
 
 
@@ -96,11 +111,9 @@ def _fallback(question: str, context: dict[str, Any]) -> str:
         return "Upcoming/current macro events in PAL: " + "; ".join(titles) + "." if titles else "No scheduled macro events were supplied to PAL in the current context."
     if any(x in q for x in ("bias", "bullish", "bearish", "neutral", "direction")):
         return f"Today's evidence: GBP/USD {pair}, DXY {dxy}, GBP {gbp}. {summary} PAL does not invent conviction when evidence is insufficient."
-    if any(x in q for x in ("where should i look", "what should i watch", "what to watch", "watch today", "where to look")):
-        return f"Today's evidence focus: GBP/USD and DXY alignment first, then current-day releases/news that can change expectations. Today's GBP/USD bias is {pair}; DXY is {dxy}."
     if any(x in q for x in ("brief", "today", "what matters")):
         return f"Today's PAL brief: GBP/USD is {pair}; DXY is {dxy}; GBP is {gbp}. {summary}"
-    return f"Today's PAL evidence: GBP/USD {pair}, DXY {dxy}, GBP {gbp}. For the broader regime, GBP/USD is {macro_pair} and DXY is {macro_dxy}. I need a more specific question to answer precisely."
+    return f"Today's PAL evidence: GBP/USD {pair}, DXY {dxy}, GBP {gbp}. Broader regime: GBP/USD {macro_pair}, DXY {macro_dxy}."
 
 
 @router.post("")
@@ -114,7 +127,7 @@ def assistant(payload: AssistantRequest) -> dict[str, Any]:
         f"The user is currently on the {page} page. "
         "TODAY and MACRO are separate concepts: for questions about today/current trading day/current session, use context.today only; for broader macro/regime questions, use context.macro. Never substitute macro for missing TODAY data. "
         "Use ONLY supplied PAL context. Never fabricate prices, news, events, sources, or certainty. Upcoming events are risk/context, not automatic directional evidence. "
-        "For journal/trade questions, compare trade details against today's supplied market context and explicitly flag conflicts. Do not infer missing stop-loss, take-profit, setup, or rationale fields. Do not give personalized financial instructions or guarantee outcomes. If evidence is missing, say so. Be concise but useful."
+        "For journal/trade questions, compare trade details against today's supplied market context and explicitly flag conflicts. Do not infer missing stop-loss, take-profit, setup, or rationale fields. If evidence is missing, say so. Be concise but useful."
     )
     prompt = {"system": system, "question": question, "recent_conversation": history, "pal_context": context}
     if not os.getenv("OPENAI_API_KEY"):
