@@ -27,7 +27,6 @@ export default function MacroRegimePanel() {
     if (!macro) return [] as Array<{ source: string; title: string; detail: string }>;
 
     const rows: Array<{ source: string; title: string; detail: string }> = [];
-
     const reasonSets: Array<[string, unknown]> = [
       ["DXY regime", macro.dxy?.reasons],
       ["GBP regime", macro.gbp?.reasons],
@@ -42,7 +41,7 @@ export default function MacroRegimePanel() {
       }
     }
 
-    for (const item of [...(macro.news ?? []), ...(macro.high_impact ?? [])].slice(0, 6)) {
+    for (const item of (macro.news ?? []).slice(0, 6)) {
       const source = textValue(item.source ?? item.provider, "News");
       rows.push({
         source,
@@ -87,11 +86,11 @@ export default function MacroRegimePanel() {
           </div>
 
           <div className="mt-4 grid grid-cols-3 gap-2">
-            {[["DXY", macro.dxy?.bias], ["GBP", macro.gbp?.bias], ["GBP/USD", macro.gbpusd?.bias]].map(([label, bias]) => (
-              <div key={String(label)} className="rounded-2xl border border-white/[.06] bg-black/20 p-3">
+            {([["DXY", "dxy"], ["GBP", "gbp"], ["GBP/USD", "gbpusd"]] as const).map(([label, key]) => (
+              <div key={label} className="rounded-2xl border border-white/[.06] bg-black/20 p-3">
                 <div className="text-[8px] uppercase tracking-[.16em] text-zinc-600">{label}</div>
-                <div className={`mt-2 inline-flex rounded-lg border px-2 py-1 text-[9px] font-bold ${tone(bias)}`}>{String(bias ?? "UNKNOWN")}</div>
-                <div className="mt-2 text-[8px] text-zinc-700">{Number((macro as any)[String(label).toLowerCase().replace("/", "")]?.confidence ?? 0)}% confidence</div>
+                <div className={`mt-2 inline-flex rounded-lg border px-2 py-1 text-[9px] font-bold ${tone(macro[key]?.bias)}`}>{String(macro[key]?.bias ?? "UNKNOWN")}</div>
+                <div className="mt-2 text-[8px] text-zinc-700">{Number(macro[key]?.confidence ?? 0)}% confidence</div>
               </div>
             ))}
           </div>
