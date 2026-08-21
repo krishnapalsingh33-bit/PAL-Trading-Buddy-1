@@ -44,6 +44,46 @@ class PALService:
         merged.sort(key=lambda item: str(item.get("published_at", item.get("published", ""))), reverse=True)
         return merged[:40]
 
+    @staticmethod
+    def _right_now_bias(momentum: float | None) -> str:
+        if momentum is None:
+            return "UNKNOWN"
+        if momentum >= 0.03:
+            return "BULLISH"
+        if momentum <= -0.03:
+            return "BEARISH"
+        return "NEUTRAL"
+
+    @staticmethod
+    def _right_now_momentum_label(momentum: float | None) -> str:
+        if momentum is None:
+            return "NO LIVE MOMENTUM"
+        if momentum >= 0.03:
+            return "↑ BUYING"
+        if momentum <= -0.03:
+            return "↓ SELLING"
+        return "→ FLAT"
+
+    @classmethod
+    def _build_right_now(cls, markets: dict) -> dict:
+        result: dict[str, dict] = {}
+        for symbol in ("DXY", "GBP", "GBPUSD"):
+            market_symbol = "GBPUSD" if symbol in {"GBP", "GBPUSD"} else "DXY"
+            quote = markets.get(market_symbol) if isinstance(markets, dict) else None
+            momentum = quote.get("right_now_momentum_percent") if isinstance(quote, dict) else None
+            try:
+                momentum = float(momentum) if momentum is not None else None
+            except (TypeError, ValueError):
+                momentum = None
+            result[symbol.lower()] = {
+                "bias": cls._right_now_bias(momentum),
+                "momentum": round(momentum, 4) if momentum is not None else None,
+                "direction": cls._right_now_momentum_label(momentum),
+                "source": "live_market_observation",
+                "scope": "RIGHT_NOW",
+            }
+        return result
+
     def analyze(self, symbol: str, news_events: list[dict], current_time: datetime):
         try:
             google_headlines = self.google_news_provider.get_headlines()
@@ -79,7 +119,7 @@ class PALService:
         except Exception as ex:
             print(f"Online market data service failed: {ex}")
             markets = {
-                market_symbol: {"symbol": market_symbol, "price": None, "previous_price": None, "change": None, "change_percent": None, "timestamp": None, "source": "online_provider", "status": "UNAVAILABLE", "freshness_seconds": None, "unit": "price", "reason": "Online market data is temporarily unavailable."}
+                market_symbol: {"symbol": market_symbol, "price": None, "previous_price": None, "change": None, "change_percent": None, "timestamp": None, "source": "online_provider", "status": "UNAVAILABLE", "freshness_seconds": None, "unit": "price", "reason": "Online market data is temporarily unavailable.", "right_now_momentum_percent": None}
                 for market_symbol in self.market_data_service.SYMBOLS
             }
 
@@ -90,9 +130,6 @@ class PALService:
             macro_data = {"source_status": {}, "observations": {}, "fetched_at": None}
 
         try:
-            # IMPORTANT: pass the broader macro result only for API compatibility.
-            # TodayOnlyBiasEngine deliberately ignores it and calculates TODAY
-            # independently from today's news/calendar/market evidence.
             today_bias = self.today_bias_engine.build(
                 _macro_bias=macro_bias,
                 news={**news, "markets": markets, "macro_data": macro_data},
@@ -101,6 +138,8 @@ class PALService:
         except Exception as ex:
             print(f"Today-only bias engine failed: {ex}")
             today_bias = {"today": {"bias": "UNKNOWN", "score": 0, "confidence": 0, "reasons": ["Today bias is temporarily unavailable."], "evidence_count": 0, "scope": "TODAY_ONLY"}, "sessions": {}, "active_session": None}
+
+        today_bias["today"]["right_now"] = self._build_right_now(markets)
 
         news["macro_bias"] = macro_bias
         news["today_bias"] = today_bias
@@ -111,26 +150,40 @@ class PALService:
 
     @staticmethod
     def _apply_live_news_sanity(macro_bias: dict, headlines: list[dict]) -> dict:
-        if not isinstance(macro_bias, dict) or not isinstance(headlines, list): return macro_bias
+        if not isinstance(macro_bias, dict) or not isinstance(headlines, list):
+            return macro_bias
         usd_bullish = ("hawkish fed", "hawkish federal reserve", "fed hike", "rate hike bets rise", "higher for longer", "strong us inflation", "hot us inflation", "strong us jobs", "strong payrolls", "strong retail sales", "us growth accelerates")
         usd_bearish = ("dovish fed", "dovish federal reserve", "dovish response", "fed hold", "hold interest rates", "rate hike bets fade", "rate cut bets rise", "soft economic data", "unexpected job losses", "weak jobs", "weak payrolls", "weaker retail sales", "lower-than-expected inflation", "mild inflation", "soft us economy")
         gbp_bullish = ("hawkish boe", "hawkish bank of england", "boe rate hike", "boe hikes", "uk inflation rises", "uk inflation remains elevated", "strong uk growth", "uk growth accelerates", "uk wages accelerate", "uk employment strengthens")
         gbp_bearish = ("dovish boe", "dovish bank of england", "boe rate cut", "boe cuts", "cooling uk labour market", "cooling uk labor market", "uk labour market cool", "uk labor market cool", "vacancies fell", "job vacancies fell", "wage growth slowed", "uk wages slow", "uk employment weakens", "weak uk growth", "uk growth slows", "unemployment rises", "soft labour market", "soft labor market")
+
         def score(bucket, positive, negative):
             total = 0.0
             for item in headlines:
-                if not isinstance(item, dict) or str(item.get("currency", "")).upper() != bucket: continue
-                title = str(item.get("title", "")).lower(); source = str(item.get("source", "")).lower(); weight = 1.25 if any(name in source for name in ("reuters", "bloomberg", "financial times", "wall street journal")) else 1.0
-                total += weight * sum(1 for term in positive if term in title); total -= weight * sum(1 for term in negative if term in title)
+                if not isinstance(item, dict) or str(item.get("currency", "")).upper() != bucket:
+                    continue
+                title = str(item.get("title", "")).lower()
+                source = str(item.get("source", "")).lower()
+                weight = 1.25 if any(name in source for name in ("reuters", "bloomberg", "financial times", "wall street journal")) else 1.0
+                total += weight * sum(1 for term in positive if term in title)
+                total -= weight * sum(1 for term in negative if term in title)
             return max(-5.0, min(5.0, total))
+
         usd_score, gbp_score = score("USD", usd_bullish, usd_bearish), score("GBP", gbp_bullish, gbp_bearish)
+
         def resolve(current, value):
             normalized = str(current or "").upper()
-            if normalized not in {"NEUTRAL", "UNKNOWN", ""}: return normalized
+            if normalized not in {"NEUTRAL", "UNKNOWN", ""}:
+                return normalized
             return "BULLISH" if value >= 1.5 else ("BEARISH" if value <= -1.5 else "NEUTRAL")
+
         dxy, gbp, gbpusd = dict(macro_bias.get("dxy") or {}), dict(macro_bias.get("gbp") or {}), dict(macro_bias.get("gbpusd") or {})
-        dxy_bias, gbp_bias = resolve(dxy.get("bias"), usd_score), resolve(gbp.get("bias"), gbp_score); relative_score = gbp_score - usd_score; gbpusd_bias = resolve(gbpusd.get("bias"), relative_score)
-        dxy.update({"bias": dxy_bias, "bullish": dxy_bias == "BULLISH", "bearish": dxy_bias == "BEARISH"}); gbp.update({"bias": gbp_bias, "bullish": gbp_bias == "BULLISH", "bearish": gbp_bias == "BEARISH"}); gbpusd.update({"bias": gbpusd_bias, "bullish": gbpusd_bias == "BULLISH", "bearish": gbpusd_bias == "BEARISH"})
+        dxy_bias, gbp_bias = resolve(dxy.get("bias"), usd_score), resolve(gbp.get("bias"), gbp_score)
+        relative_score = gbp_score - usd_score
+        gbpusd_bias = resolve(gbpusd.get("bias"), relative_score)
+        dxy.update({"bias": dxy_bias, "bullish": dxy_bias == "BULLISH", "bearish": dxy_bias == "BEARISH"})
+        gbp.update({"bias": gbp_bias, "bullish": gbp_bias == "BULLISH", "bearish": gbp_bias == "BEARISH"})
+        gbpusd.update({"bias": gbpusd_bias, "bullish": gbpusd_bias == "BULLISH", "bearish": gbpusd_bias == "BEARISH"})
         macro_bias["dxy"], macro_bias["gbp"], macro_bias["gbpusd"] = dxy, gbp, gbpusd
         macro_bias["live_news_scores"] = {"usd": round(usd_score, 2), "gbp": round(gbp_score, 2), "gbpusd_relative": round(relative_score, 2)}
         macro_bias["summary"] = f"USD: {dxy_bias}. GBP: {gbp_bias}. GBP/USD macro bias: {gbpusd_bias}."
