@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from threading import Lock
+from typing import Any
 
 from models.market_quote import MarketQuote
 from providers.provider_factory import ProviderFactory
 
 
 class MarketDataService:
-    """Cached online market snapshot service with a short-term momentum observation."""
+    """Cached online market snapshots plus provider-backed intraday momentum."""
 
     SYMBOLS = ("DXY", "GBPUSD", "XAUUSD", "USOIL", "US10Y", "US500")
 
@@ -16,7 +17,7 @@ class MarketDataService:
         self.provider = ProviderFactory.get_provider()
         self.ttl = timedelta(seconds=ttl_seconds)
         self._cache: dict[str, tuple[datetime, MarketQuote]] = {}
-        self._recent: dict[str, list[tuple[datetime, float]]] = {}
+        self._right_now: dict[str, dict[str, Any]] = {}
         self._lock = Lock()
 
     def _cached(self, symbol: str) -> MarketQuote | None:
@@ -32,30 +33,28 @@ class MarketDataService:
     def _set_cache(self, symbol: str, quote: MarketQuote) -> None:
         with self._lock:
             self._cache[symbol] = (datetime.now(timezone.utc), quote)
-            price = quote.price
-            if price is not None:
-                now = datetime.now(timezone.utc)
-                history = self._recent.setdefault(symbol, [])
-                history.append((now, float(price)))
-                cutoff = now - timedelta(minutes=3)
-                self._recent[symbol] = [(stamp, value) for stamp, value in history if stamp >= cutoff][-40:]
 
-    def _short_term_momentum(self, symbol: str) -> float | None:
-        """Return the observed price change over roughly the last 60 seconds.
-
-        This is intentionally not a 5m/15m/30m/1h timeframe calculation. It is
-        a live-stream observation used only for the dashboard's RIGHT NOW bias.
-        """
-        with self._lock:
-            history = list(self._recent.get(symbol, []))
-        if len(history) < 2:
-            return None
-        now, current = history[-1]
-        target = now - timedelta(seconds=45)
-        baseline = next(((stamp, value) for stamp, value in history if stamp <= target), history[0])
-        if baseline[1] == 0:
-            return None
-        return (current - baseline[1]) / baseline[1] * 100.0
+    def _get_right_now(self, symbol: str) -> dict[str, Any]:
+        getter = getattr(self.provider, "get_intraday_momentum", None)
+        if not callable(getter):
+            return {"status": "WARMING_UP", "momentum_percent": None, "price": None, "points": []}
+        try:
+            momentum, price, points = getter(symbol)
+            with self._lock:
+                previous = self._right_now.get(symbol, {})
+                self._right_now[symbol] = {
+                    "status": "CURRENT" if momentum is not None else "WARMING_UP",
+                    "momentum_percent": round(float(momentum), 4) if momentum is not None else None,
+                    "price": price,
+                    "points": list(points or []),
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                    "previous_momentum": previous.get("momentum_percent"),
+                }
+                return dict(self._right_now[symbol])
+        except Exception:
+            with self._lock:
+                previous = self._right_now.get(symbol)
+            return previous or {"status": "WARMING_UP", "momentum_percent": None, "price": None, "points": []}
 
     def get_market_data(self, symbol: str, force_refresh: bool = False) -> MarketQuote:
         normalized = symbol.upper()
@@ -65,7 +64,7 @@ class MarketDataService:
                 return cached
 
         quote = self.provider.get_quote(normalized)
-        if quote.status == "CURRENT":
+        if quote.price is not None:
             self._set_cache(normalized, quote)
             return quote
 
@@ -77,7 +76,7 @@ class MarketDataService:
                 **{
                     **stale_quote.to_dict(),
                     "status": "STALE",
-                    "reason": quote.reason or "Provider temporarily unavailable.",
+                    "reason": quote.reason or "Online market provider returned no current quote.",
                 }
             )
         return quote
@@ -87,11 +86,19 @@ class MarketDataService:
         for symbol in self.SYMBOLS:
             quote = self.get_market_data(symbol, force_refresh=force_refresh)
             data = quote.to_dict()
-            data["right_now_momentum_percent"] = self._short_term_momentum(symbol)
+            if symbol in {"DXY", "GBPUSD"}:
+                right_now = self._get_right_now(symbol)
+            else:
+                right_now = {"status": "NOT_TRACKED", "momentum_percent": None, "price": quote.price, "points": []}
+            data["right_now_momentum_percent"] = right_now.get("momentum_percent")
+            data["right_now_status"] = right_now.get("status")
+            data["right_now_price"] = right_now.get("price")
+            data["right_now_points"] = right_now.get("points", [])
+            data["right_now_previous_momentum"] = right_now.get("previous_momentum")
             snapshot[symbol] = data
         return snapshot
 
     def clear_cache(self) -> None:
         with self._lock:
             self._cache.clear()
-            self._recent.clear()
+            self._right_now.clear()
