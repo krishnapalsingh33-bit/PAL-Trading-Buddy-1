@@ -7,64 +7,35 @@ from typing import Any
 import requests
 
 
+CURRENCIES = ("AUD", "CAD", "CHF", "EUR", "GBP", "JPY", "NZD", "USD")
+
+
 class ForexIntelligenceService:
-    """Real-data multi-timeframe Forex analysis using Yahoo Finance chart data."""
+    """Real-data Forex intelligence for every directed pair across 8 G10 currencies."""
 
     BASE_URLS = (
         "https://query1.finance.yahoo.com/v8/finance/chart",
         "https://query2.finance.yahoo.com/v8/finance/chart",
     )
-
-    SYMBOL_MAP = {
-        "EURUSD": "EURUSD=X", "EUR/USD": "EURUSD=X",
-        "GBPUSD": "GBPUSD=X", "GBP/USD": "GBPUSD=X",
-        "USDJPY": "JPY=X", "USD/JPY": "JPY=X",
-        "USDCHF": "CHF=X", "USD/CHF": "CHF=X",
-        "USDCAD": "CAD=X", "USD/CAD": "CAD=X",
-        "AUDUSD": "AUDUSD=X", "AUD/USD": "AUDUSD=X",
-        "NZDUSD": "NZDUSD=X", "NZD/USD": "NZDUSD=X",
-        "EURGBP": "EURGBP=X", "EUR/GBP": "EURGBP=X",
-        "EURJPY": "EURJPY=X", "EUR/JPY": "EURJPY=X",
-        "GBPJPY": "GBPJPY=X", "GBP/JPY": "GBPJPY=X",
-        "AUDJPY": "AUDJPY=X", "AUD/JPY": "AUDJPY=X",
-        "CADJPY": "CADJPY=X", "CAD/JPY": "CADJPY=X",
-        "CHFJPY": "CHFJPY=X", "CHF/JPY": "CHFJPY=X",
-        "EURAUD": "EURAUD=X", "EUR/AUD": "EURAUD=X",
-        "EURCAD": "EURCAD=X", "EUR/CAD": "EURCAD=X",
-        "EURNZD": "EURNZD=X", "EUR/NZD": "EURNZD=X",
-        "GBPAUD": "GBPAUD=X", "GBP/AUD": "GBPAUD=X",
-        "GBPCAD": "GBPCAD=X", "GBP/CAD": "GBPCAD=X",
-        "GBPNZD": "GBPNZD=X", "GBP/NZD": "GBPNZD=X",
-        "AUDCAD": "AUDCAD=X", "AUD/CAD": "AUDCAD=X",
-        "AUDNZD": "AUDNZD=X", "AUD/NZD": "AUDNZD=X",
-        "CADCHF": "CADCHF=X", "CAD/CHF": "CADCHF=X",
-        "NZDCAD": "NZDCAD=X", "NZD/CAD": "NZDCAD=X",
-        "NZDJPY": "NZDJPY=X", "NZD/JPY": "NZDJPY=X",
-    }
-
     TIMEFRAMES = {
-        "15M": {"interval": "15m", "range": "5d", "periods": 96},
-        "30M": {"interval": "30m", "range": "10d", "periods": 96},
-        "1H": {"interval": "1h", "range": "1mo", "periods": 96},
-        "4H": {"interval": "1h", "range": "3mo", "periods": 96},
+        "15M": {"interval": "15m", "range": "5d"},
+        "30M": {"interval": "30m", "range": "10d"},
+        "1H": {"interval": "1h", "range": "1mo"},
+        "4H": {"interval": "1h", "range": "3mo"},
     }
-
-    SUPPORTED = tuple(sorted({key for key in SYMBOL_MAP if "/" not in key}))
+    SUPPORTED = tuple(sorted(f"{base}{quote}" for base in CURRENCIES for quote in CURRENCIES if base != quote))
 
     def __init__(self, timeout_seconds: float = 10.0, session: requests.Session | None = None) -> None:
         self.timeout_seconds = timeout_seconds
         self.session = session or requests.Session()
-        self.session.headers.update({
-            "User-Agent": "PAL-Trading-Buddy/1.0",
-            "Accept": "application/json,text/plain,*/*",
-        })
+        self.session.headers.update({"User-Agent": "PAL-Trading-Buddy/1.0", "Accept": "application/json,text/plain,*/*"})
 
     @classmethod
     def normalize(cls, symbol: str) -> str:
-        normalized = symbol.upper().replace(" ", "")
-        if normalized not in cls.SYMBOL_MAP:
-            raise ValueError(f"Unsupported forex pair: {symbol}")
-        return normalized.replace("/", "")
+        normalized = symbol.upper().replace(" ", "").replace("/", "")
+        if normalized not in cls.SUPPORTED:
+            raise ValueError(f"Unsupported forex pair: {symbol}. Supported universe contains {len(cls.SUPPORTED)} pairs.")
+        return normalized
 
     @classmethod
     def display_label(cls, symbol: str) -> str:
@@ -75,6 +46,16 @@ class ForexIntelligenceService:
     def currencies(cls, symbol: str) -> tuple[str, str]:
         normalized = cls.normalize(symbol)
         return normalized[:3], normalized[3:]
+
+    @classmethod
+    def yahoo_symbol(cls, symbol: str) -> str:
+        normalized = cls.normalize(symbol)
+        base, quote = normalized[:3], normalized[3:]
+        if base == "USD":
+            return f"{quote}=X"
+        if quote == "USD":
+            return f"{base}USD=X"
+        return f"{base}{quote}=X"
 
     @staticmethod
     def _number(value: Any) -> float | None:
@@ -94,32 +75,25 @@ class ForexIntelligenceService:
                     timeout=self.timeout_seconds,
                 )
                 response.raise_for_status()
-                payload = response.json()
-                chart = payload.get("chart") or {}
+                chart = response.json().get("chart") or {}
                 if chart.get("error"):
-                    raise RuntimeError((chart.get("error") or {}).get("description") or "Yahoo Finance returned an error.")
+                    raise RuntimeError((chart["error"] or {}).get("description") or "Yahoo Finance returned an error.")
                 result = (chart.get("result") or [None])[0]
                 if not result:
                     raise RuntimeError("Yahoo Finance returned no chart data.")
                 timestamps = result.get("timestamp") or []
                 quote = (((result.get("indicators") or {}).get("quote") or [{}])[0])
-                opens = quote.get("open") or []
-                highs = quote.get("high") or []
-                lows = quote.get("low") or []
-                closes = quote.get("close") or []
-                volumes = quote.get("volume") or []
                 rows = []
                 for index, timestamp in enumerate(timestamps):
-                    close = self._number(closes[index] if index < len(closes) else None)
+                    close = self._number((quote.get("close") or [])[index] if index < len(quote.get("close") or []) else None)
                     if close is None:
                         continue
                     rows.append({
                         "time": datetime.fromtimestamp(int(timestamp), tz=timezone.utc).isoformat(),
-                        "open": self._number(opens[index] if index < len(opens) else None),
-                        "high": self._number(highs[index] if index < len(highs) else None),
-                        "low": self._number(lows[index] if index < len(lows) else None),
+                        "open": self._number((quote.get("open") or [])[index] if index < len(quote.get("open") or []) else None),
+                        "high": self._number((quote.get("high") or [])[index] if index < len(quote.get("high") or []) else None),
+                        "low": self._number((quote.get("low") or [])[index] if index < len(quote.get("low") or []) else None),
                         "close": close,
-                        "volume": self._number(volumes[index] if index < len(volumes) else None),
                     })
                 if len(rows) < 30:
                     raise RuntimeError("Not enough chart observations returned.")
@@ -135,64 +109,63 @@ class ForexIntelligenceService:
         multiplier = 2 / (period + 1)
         ema = sum(values[:period]) / period
         for value in values[period:]:
-            ema = (value - ema) * multiplier + ema
+            ema += (value - ema) * multiplier
         return ema
 
     @staticmethod
     def _rsi(values: list[float], period: int = 14) -> float | None:
         if len(values) <= period:
             return None
-        gains: list[float] = []
-        losses: list[float] = []
+        gains, losses = [], []
         for index in range(1, len(values)):
             delta = values[index] - values[index - 1]
             gains.append(max(delta, 0.0))
             losses.append(max(-delta, 0.0))
-        if len(gains) < period:
-            return None
-        average_gain = sum(gains[:period]) / period
-        average_loss = sum(losses[:period]) / period
+        avg_gain = sum(gains[:period]) / period
+        avg_loss = sum(losses[:period]) / period
         for index in range(period, len(gains)):
-            average_gain = ((average_gain * (period - 1)) + gains[index]) / period
-            average_loss = ((average_loss * (period - 1)) + losses[index]) / period
-        if average_loss == 0:
+            avg_gain = ((avg_gain * (period - 1)) + gains[index]) / period
+            avg_loss = ((avg_loss * (period - 1)) + losses[index]) / period
+        if avg_loss == 0:
             return 100.0
-        relative_strength = average_gain / average_loss
-        return 100 - (100 / (1 + relative_strength))
+        return 100 - (100 / (1 + (avg_gain / avg_loss)))
+
+    @staticmethod
+    def _aggregate_four_hour(rows: list[dict[str, float | str]]) -> list[dict[str, float | str]]:
+        grouped: dict[str, dict[str, float | str]] = {}
+        for row in rows:
+            timestamp = datetime.fromisoformat(str(row["time"]).replace("Z", "+00:00")).astimezone(timezone.utc)
+            bucket = timestamp.replace(hour=(timestamp.hour // 4) * 4, minute=0, second=0, microsecond=0)
+            key = bucket.isoformat()
+            current = grouped.get(key)
+            if current is None:
+                grouped[key] = {"time": key, "open": row.get("open"), "high": row.get("high"), "low": row.get("low"), "close": row.get("close")}
+            else:
+                if row.get("high") is not None:
+                    current["high"] = max(float(current["high"] or row["high"]), float(row["high"]))
+                if row.get("low") is not None:
+                    current["low"] = min(float(current["low"] or row["low"]), float(row["low"]))
+                current["close"] = row.get("close")
+        return list(grouped.values())
 
     @staticmethod
     def _bias(close: float, ema20: float | None, ema50: float | None, rsi: float | None) -> tuple[str, int, str]:
         if ema20 is None or ema50 is None or rsi is None:
-            return "UNKNOWN", 0, "Insufficient data for a reliable timeframe assessment."
-        score = 0
-        score += 1 if close > ema20 else -1
-        score += 1 if ema20 > ema50 else -1
-        score += 1 if rsi >= 55 else -1 if rsi <= 45 else 0
-        if score >= 2:
-            bias = "BULLISH"
-        elif score <= -2:
-            bias = "BEARISH"
-        else:
-            bias = "NEUTRAL"
-        confidence = min(95, max(50, 50 + abs(score) * 15))
-        if bias == "BULLISH":
-            reason = "Price is above EMA20 with medium-term alignment and positive momentum."
-        elif bias == "BEARISH":
-            reason = "Price is below EMA20 with medium-term alignment and negative momentum."
-        else:
-            reason = "Trend and momentum are mixed; PAL is keeping the timeframe neutral."
+            return "UNKNOWN", 0, "Insufficient data."
+        score = (1 if close > ema20 else -1) + (1 if ema20 > ema50 else -1) + (1 if rsi >= 55 else -1 if rsi <= 45 else 0)
+        bias = "BULLISH" if score >= 2 else "BEARISH" if score <= -2 else "NEUTRAL"
+        confidence = min(95, 50 + abs(score) * 15)
+        reason = "Price, EMA alignment and momentum are supportive." if bias == "BULLISH" else "Price, EMA alignment and momentum are negative." if bias == "BEARISH" else "Trend and momentum are mixed."
         return bias, confidence, reason
 
     def _timeframe(self, yahoo_symbol: str, timeframe: str) -> dict[str, Any]:
-        config = self.TIMEFRAMES[timeframe]
-        rows = self._fetch(yahoo_symbol, config["interval"], config["range"])
+        cfg = self.TIMEFRAMES[timeframe]
+        rows = self._fetch(yahoo_symbol, cfg["interval"], cfg["range"])
         if timeframe == "4H":
             rows = self._aggregate_four_hour(rows)
-        closes = [float(row["close"]) for row in rows if row.get("close") is not None]
+        closes = [float(row["close"]) for row in rows]
         latest = rows[-1]
-        ema20 = self._ema(closes, 20)
-        ema50 = self._ema(closes, 50)
-        rsi = self._rsi(closes, 14)
+        ema20, ema50, rsi = self._ema(closes, 20), self._ema(closes, 50), self._rsi(closes)
         bias, confidence, reason = self._bias(float(latest["close"]), ema20, ema50, rsi)
         return {
             "timeframe": timeframe,
@@ -203,54 +176,28 @@ class ForexIntelligenceService:
             "ema50": round(ema50, 6) if ema50 is not None else None,
             "rsi14": round(rsi, 2) if rsi is not None else None,
             "reason": reason,
-            "observations": len(rows),
             "timestamp": latest["time"],
+            "candles": rows[-100:],
         }
-
-    @staticmethod
-    def _aggregate_four_hour(rows: list[dict[str, float | str]]) -> list[dict[str, float | str]]:
-        grouped: dict[str, dict[str, Any]] = {}
-        for row in rows:
-            timestamp = datetime.fromisoformat(str(row["time"]).replace("Z", "+00:00"))
-            bucket = timestamp.astimezone(timezone.utc).replace(minute=0, second=0, microsecond=0, hour=(timestamp.hour // 4) * 4)
-            key = bucket.isoformat()
-            current = grouped.get(key)
-            if current is None:
-                grouped[key] = {"time": key, "open": row.get("open"), "high": row.get("high"), "low": row.get("low"), "close": row.get("close"), "volume": row.get("volume")}
-                continue
-            current["high"] = max(float(current["high"] or row["high"]), float(row["high"] or current["high"])) if row.get("high") is not None else current["high"]
-            current["low"] = min(float(current["low"] or row["low"]), float(row["low"] or current["low"])) if row.get("low") is not None else current["low"]
-            current["close"] = row.get("close")
-            if row.get("volume") is not None:
-                current["volume"] = float(current.get("volume") or 0) + float(row["volume"])
-        return list(grouped.values())
 
     def analyze(self, symbol: str) -> dict[str, Any]:
         normalized = self.normalize(symbol)
-        yahoo_symbol = self.SYMBOL_MAP[normalized]
-        timeframe_data = {timeframe: self._timeframe(yahoo_symbol, timeframe) for timeframe in self.TIMEFRAMES}
-        usable = [value for value in timeframe_data.values() if value["bias"] != "UNKNOWN"]
-        bull = sum(1 for value in usable if value["bias"] == "BULLISH")
-        bear = sum(1 for value in usable if value["bias"] == "BEARISH")
-        if bull >= 3:
-            overall = "BULLISH"
-        elif bear >= 3:
-            overall = "BEARISH"
-        elif bull > bear:
-            overall = "LEAN BULLISH"
-        elif bear > bull:
-            overall = "LEAN BEARISH"
-        else:
-            overall = "NEUTRAL"
-        avg_confidence = round(sum(value["confidence"] for value in usable) / len(usable)) if usable else 0
+        yahoo_symbol = self.yahoo_symbol(normalized)
+        timeframes = {name: self._timeframe(yahoo_symbol, name) for name in self.TIMEFRAMES}
+        usable = [item for item in timeframes.values() if item["bias"] != "UNKNOWN"]
+        bull = sum(item["bias"] == "BULLISH" for item in usable)
+        bear = sum(item["bias"] == "BEARISH" for item in usable)
+        overall = "BULLISH" if bull >= 3 else "BEARISH" if bear >= 3 else "LEAN BULLISH" if bull > bear else "LEAN BEARISH" if bear > bull else "NEUTRAL"
+        confidence = round(sum(item["confidence"] for item in usable) / len(usable)) if usable else 0
         return {
             "symbol": normalized,
             "label": self.display_label(normalized),
             "base_currency": normalized[:3],
             "quote_currency": normalized[3:],
             "overall_bias": overall,
-            "confidence": avg_confidence,
-            "timeframes": timeframe_data,
+            "confidence": confidence,
+            "timeframes": timeframes,
+            "supported_pairs": len(self.SUPPORTED),
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "source": "Yahoo Finance",
         }
