@@ -45,30 +45,22 @@ class PALService:
         return merged[:40]
 
     @staticmethod
-    def _right_now_signal(momentum: float | None, change_percent: float | None) -> float | None:
-        if momentum is not None:
-            return momentum
-        if change_percent is not None:
-            return change_percent
-        return None
-
-    @staticmethod
-    def _right_now_bias(signal: float | None) -> str:
-        if signal is None:
-            return "DATA UNAVAILABLE"
-        if signal >= 0.03:
+    def _right_now_bias(momentum: float | None) -> str:
+        if momentum is None:
+            return "WARMING UP"
+        if momentum >= 0.03:
             return "BULLISH"
-        if signal <= -0.03:
+        if momentum <= -0.03:
             return "BEARISH"
         return "NEUTRAL"
 
     @staticmethod
-    def _right_now_momentum_label(signal: float | None) -> str:
-        if signal is None:
-            return "— NO LIVE DATA"
-        if signal >= 0.03:
+    def _right_now_momentum_label(momentum: float | None) -> str:
+        if momentum is None:
+            return "• COLLECTING LIVE DATA"
+        if momentum >= 0.03:
             return "↑ BUYING"
-        if signal <= -0.03:
+        if momentum <= -0.03:
             return "↓ SELLING"
         return "→ FLAT"
 
@@ -79,20 +71,14 @@ class PALService:
             market_symbol = "GBPUSD" if symbol in {"GBP", "GBPUSD"} else "DXY"
             quote = markets.get(market_symbol) if isinstance(markets, dict) else None
             momentum = quote.get("right_now_momentum_percent") if isinstance(quote, dict) else None
-            change_percent = quote.get("change_percent") if isinstance(quote, dict) else None
             try:
                 momentum = float(momentum) if momentum is not None else None
             except (TypeError, ValueError):
                 momentum = None
-            try:
-                change_percent = float(change_percent) if change_percent is not None else None
-            except (TypeError, ValueError):
-                change_percent = None
-            signal = cls._right_now_signal(momentum, change_percent)
             result[symbol.lower()] = {
-                "bias": cls._right_now_bias(signal),
-                "momentum": round(signal, 4) if signal is not None else None,
-                "direction": cls._right_now_momentum_label(signal),
+                "bias": cls._right_now_bias(momentum),
+                "momentum": round(momentum, 4) if momentum is not None else None,
+                "direction": cls._right_now_momentum_label(momentum),
                 "price": quote.get("price") if isinstance(quote, dict) else None,
                 "status": str(quote.get("status", "UNAVAILABLE")) if isinstance(quote, dict) else "UNAVAILABLE",
                 "source": "live_market_observation",
