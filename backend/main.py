@@ -7,7 +7,6 @@ from api.news_routes import router as news_router
 from api.history_routes import router as history_router
 from api.assistant_routes import router as assistant_router
 from api.mt5_routes import router as mt5_router
-from api.market_routes import router as market_router
 
 app = FastAPI(title="PAL Trading Buddy API", version="2.0.0", description="PAL Trading Buddy Backend")
 
@@ -19,7 +18,6 @@ app.include_router(news_router)
 app.include_router(history_router)
 app.include_router(assistant_router)
 app.include_router(mt5_router)
-app.include_router(market_router)
 
 @app.get("/")
 def root():
