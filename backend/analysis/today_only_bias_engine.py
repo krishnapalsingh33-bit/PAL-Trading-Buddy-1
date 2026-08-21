@@ -6,12 +6,7 @@ from zoneinfo import ZoneInfo
 
 
 class TodayOnlyBiasEngine:
-    """Independent TODAY-only GBP/USD bias engine.
-
-    No MacroBiasEngine score, weekly regime, or broader macro bias is used.
-    Direction comes only from current-day news, released data, and light
-    current-day price context. Upcoming events are risk/context only.
-    """
+    """Independent TODAY-only GBP/USD bias engine with transparent evidence buckets."""
 
     ZONES = {"Asia": "Asia/Tokyo", "London": "Europe/London", "New York": "America/New_York"}
     GBP_POS = ("hawkish boe", "boe rate hike", "boe hikes", "boe tightening", "uk inflation rises", "uk inflation rose", "uk inflation jumps", "uk inflation jumped", "uk inflation accelerates", "uk inflation accelerated", "uk inflation remains elevated", "hot uk inflation", "strong uk growth", "uk growth accelerates", "strong uk economy", "uk employment strengthens", "unemployment falls", "uk wages accelerate", "wage growth accelerates", "strong retail sales", "sterling gains", "sterling strengthens", "sterling firm", "pound gains", "pound strengthens", "pound rises", "gbp gains")
@@ -23,8 +18,16 @@ class TodayOnlyBiasEngine:
     def build(self, _macro_bias: dict[str, Any], news: dict[str, Any], now: datetime) -> dict[str, Any]:
         now = now.astimezone(timezone.utc)
         gbp = usd = 0.0
-        reasons: list[str] = []
+        components = {
+            "gbp_news": 0.0,
+            "usd_news": 0.0,
+            "gbp_data": 0.0,
+            "usd_data": 0.0,
+            "gbpusd_market": 0.0,
+            "dxy_market": 0.0,
+        }
         evidence = 0
+        reasons: list[str] = []
 
         for item in self._today_news(news, now):
             c = self._currency(item); title = self._text(item)
@@ -34,8 +37,13 @@ class TodayOnlyBiasEngine:
             if direction == 0:
                 continue
             weight = self._source_weight(item)
-            if c == "GBP": gbp += direction * weight
-            else: usd += direction * weight
+            score = direction * weight
+            if c == "GBP":
+                gbp += score
+                components["gbp_news"] += score
+            else:
+                usd += score
+                components["usd_news"] += score
             evidence += 1
             reasons.append(f"{c}: {title}")
 
@@ -53,8 +61,12 @@ class TodayOnlyBiasEngine:
                 if surprise is None:
                     continue
             score = max(-2.0, min(2.0, surprise * 1.5 * self._impact(event)))
-            if c == "GBP": gbp += score
-            else: usd += score
+            if c == "GBP":
+                gbp += score
+                components["gbp_data"] += score
+            else:
+                usd += score
+                components["usd_data"] += score
             evidence += 1
             reasons.append(f"{c} data: {self._text(event) or 'economic release'} (actual {event.get('actual')} vs forecast {event.get('forecast')}, previous {event.get('previous')})")
 
@@ -62,11 +74,15 @@ class TodayOnlyBiasEngine:
         pair_change = self._change(self._quote(markets, ("GBPUSD", "GBP/USD")))
         dxy_change = self._change(self._quote(markets, ("DXY",)))
         if pair_change is not None:
-            gbp += max(-1, min(1, pair_change / .50)) * .35
+            score = max(-1, min(1, pair_change / .50)) * .35
+            gbp += score
+            components["gbpusd_market"] += score
             evidence += 1
             reasons.append(f"GBP/USD today: {pair_change:+.2f}%")
         if dxy_change is not None:
-            usd += max(-1, min(1, dxy_change / .50)) * .35
+            score = max(-1, min(1, dxy_change / .50)) * .35
+            usd += score
+            components["dxy_market"] += score
             evidence += 1
             reasons.append(f"DXY today: {dxy_change:+.2f}%")
 
@@ -92,6 +108,8 @@ class TodayOnlyBiasEngine:
                 "updated_at": now.isoformat(),
             }
 
+        rounded_components = {key: round(value, 2) for key, value in components.items()}
+        net_evidence = round(gbp - usd, 2)
         return {
             "today": {
                 "bias": self._resolve(pair, evidence),
@@ -102,6 +120,8 @@ class TodayOnlyBiasEngine:
                 "confidence": self._confidence(pair, evidence),
                 "reasons": reasons[:8],
                 "evidence_count": evidence,
+                "components": rounded_components,
+                "net_currency_score": net_evidence,
                 "scope": "TODAY_ONLY",
                 "source": "today_news_calendar_market_data",
                 "updated_at": now.isoformat(),
