@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
 import Badge from "../ui/Badge";
 
-export type Page = "dashboard" | "journal" | "macro-desk" | "macro-view" | "macro-calendar" | "reports";
+export type Page = "dashboard" | "journal" | "forex" | "macro-desk" | "macro-view" | "macro-calendar" | "reports";
 type Brightness = "low" | "medium" | "high";
 type Props = { symbol: string; activePage?: Page; onPageChange?(page: Page): void };
 
 const NAV_ITEMS: Array<{ page: Page; label: string; icon: string }> = [
   { page: "dashboard", label: "Dashboard", icon: "⌂" },
   { page: "journal", label: "Journal", icon: "▣" },
+  { page: "forex", label: "Forex", icon: "⌁" },
   { page: "macro-desk", label: "Macro Desk", icon: "✦" },
   { page: "macro-view", label: "Macro View", icon: "◈" },
   { page: "macro-calendar", label: "Macro Calendar", icon: "□" },
