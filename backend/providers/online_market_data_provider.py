@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 class YahooMarketDataProvider(MarketDataProvider):
-    """Online snapshot provider with Yahoo and CBOE fallbacks."""
+    """Online snapshot provider with intraday momentum support and fallbacks."""
 
     BASE_URLS = (
         "https://query1.finance.yahoo.com/v8/finance/chart",
@@ -86,13 +86,13 @@ class YahooMarketDataProvider(MarketDataProvider):
             return "RECENT"
         return "STALE"
 
-    def _request_chart(self, yahoo_symbol: str) -> dict[str, Any]:
+    def _request_chart(self, yahoo_symbol: str, range_value: str = "5d", interval: str = "1d") -> dict[str, Any]:
         last_error = None
         for base_url in self.BASE_URLS:
             try:
                 response = self.session.get(
                     f"{base_url}/{yahoo_symbol}",
-                    params={"range": "5d", "interval": "1d", "events": "history", "includePrePost": "true", "lang": "en-US", "region": "US"},
+                    params={"range": range_value, "interval": interval, "events": "history", "includePrePost": "true", "lang": "en-US", "region": "US"},
                     timeout=self.timeout_seconds,
                 )
                 response.raise_for_status()
@@ -104,6 +104,33 @@ class YahooMarketDataProvider(MarketDataProvider):
                 last_error = exc
                 logger.warning("Yahoo chart endpoint failed: %s (%s)", base_url, exc)
         raise RuntimeError(f"All Yahoo chart endpoints failed: {last_error}")
+
+    def get_intraday_momentum(self, symbol: str) -> tuple[float | None, float | None, list[float]]:
+        """Return direction from the newest 1-minute candles, plus last price and recent closes."""
+        normalized = symbol.upper()
+        yahoo_symbol = self.yahoo_symbol(normalized)
+        if not yahoo_symbol:
+            return None, None, []
+        try:
+            payload = self._request_chart(yahoo_symbol, range_value="1d", interval="1m")
+            result = ((payload.get("chart") or {}).get("result") or [None])[0]
+            if not result:
+                return None, None, []
+            closes = ((((result.get("indicators") or {}).get("quote") or [{}])[0]).get("close") or [])
+            clean = [self._number(value) for value in closes]
+            clean = [value for value in clean if value is not None]
+            if len(clean) < 4:
+                return None, clean[-1] if clean else None, clean
+            # Use the latest completed movement over the newest few one-minute observations.
+            recent = clean[-4:]
+            start = recent[0]
+            end = recent[-1]
+            if start in (None, 0) or end is None:
+                return None, end, recent
+            return ((end - start) / start) * 100.0, end, recent
+        except Exception as exc:
+            logger.warning("Intraday momentum failed for %s: %s", normalized, exc)
+            return None, None, []
 
     def _request_quote(self, yahoo_symbol: str) -> dict[str, Any]:
         last_error = None
@@ -146,6 +173,29 @@ class YahooMarketDataProvider(MarketDataProvider):
             timestamp = self._timestamp(match.group(1))
         return {"regularMarketPrice": price, "regularMarketPreviousClose": previous, "regularMarketTime": timestamp}
 
+    def _quote_from_chart(self, normalized: str, yahoo_symbol: str) -> MarketQuote:
+        result = ((self._request_chart(yahoo_symbol).get("chart") or {}).get("result") or [])
+        if not result:
+            raise RuntimeError("Yahoo Finance returned no quote data.")
+        meta = result[0].get("meta") or {}
+        price = self._number(meta.get("regularMarketPrice") or meta.get("postMarketPrice") or meta.get("preMarketPrice"))
+        previous = self._number(meta.get("previousClose") or meta.get("chartPreviousClose"))
+        timestamps = result[0].get("timestamp") or []
+        closes = (((result[0].get("indicators") or {}).get("quote") or [{}])[0]).get("close", [])
+        if price is None:
+            for close in reversed(closes):
+                price = self._number(close)
+                if price is not None:
+                    break
+        if previous is None and len(closes) >= 2:
+            for close in reversed(closes[:-1]):
+                previous = self._number(close)
+                if previous is not None:
+                    break
+        if price is None:
+            raise RuntimeError("Yahoo Finance returned no current price.")
+        return self._build_quote(normalized, price, previous, self._timestamp(meta.get("regularMarketTime") or (timestamps[-1] if timestamps else None)))
+
     def _request_cboe(self, cboe_symbol: str) -> dict[str, Any]:
         response = self.session.get(f"{self.CBOE_URL}/{cboe_symbol}.json", timeout=self.timeout_seconds)
         response.raise_for_status()
@@ -170,41 +220,6 @@ class YahooMarketDataProvider(MarketDataProvider):
             raise RuntimeError("CBOE returned no current price.")
         return self._build_quote(normalized, price, previous, market_time, source="Cboe Global Markets")
 
-    def _quote_from_chart(self, normalized: str, yahoo_symbol: str) -> MarketQuote:
-        result = ((self._request_chart(yahoo_symbol).get("chart") or {}).get("result") or [])
-        if not result:
-            raise RuntimeError("Yahoo Finance returned no quote data.")
-        meta = result[0].get("meta") or {}
-        price = self._number(meta.get("regularMarketPrice") or meta.get("postMarketPrice") or meta.get("preMarketPrice"))
-        previous = self._number(meta.get("previousClose") or meta.get("chartPreviousClose"))
-        timestamps = result[0].get("timestamp") or []
-        closes = (((result[0].get("indicators") or {}).get("quote") or [{}])[0]).get("close", [])
-        if price is None:
-            for close in reversed(closes):
-                price = self._number(close)
-                if price is not None:
-                    break
-        if previous is None and len(closes) >= 2:
-            for close in reversed(closes[:-1]):
-                previous = self._number(close)
-                if previous is not None:
-                    break
-        if price is None:
-            raise RuntimeError("Yahoo Finance returned no current price.")
-        return self._build_quote(normalized, price, previous, self._timestamp(meta.get("regularMarketTime") or (timestamps[-1] if timestamps else None)))
-
-    def _quote_from_quote_endpoint(self, normalized: str, yahoo_symbol: str) -> MarketQuote:
-        row = self._request_quote(yahoo_symbol)
-        price = self._number(row.get("regularMarketPrice") or row.get("postMarketPrice") or row.get("preMarketPrice"))
-        previous = self._number(row.get("regularMarketPreviousClose") or row.get("previousClose"))
-        if price is None:
-            raise RuntimeError("Yahoo quote endpoint returned no current price.")
-        return self._build_quote(normalized, price, previous, self._timestamp(row.get("regularMarketTime")))
-
-    def _quote_from_page(self, normalized: str, yahoo_symbol: str) -> MarketQuote:
-        row = self._request_quote_page(yahoo_symbol)
-        return self._build_quote(normalized, row["regularMarketPrice"], row.get("regularMarketPreviousClose"), row.get("regularMarketTime"))
-
     def _build_quote(self, normalized: str, price: float, previous: float | None, market_time: str | None, source: str | None = None) -> MarketQuote:
         change = price - previous if previous is not None else None
         change_percent = (change / previous) * 100 if change is not None and previous not in (None, 0) else None
@@ -221,11 +236,7 @@ class YahooMarketDataProvider(MarketDataProvider):
                 except Exception as exc:
                     logger.warning("Yahoo chart failed for %s: %s", normalized, exc)
                 try:
-                    return self._quote_from_quote_endpoint(normalized, yahoo_symbol)
-                except Exception as exc:
-                    logger.warning("Yahoo quote failed for %s: %s", normalized, exc)
-                try:
-                    return self._quote_from_page(normalized, yahoo_symbol)
+                    return self._request_quote_page_quote(normalized, yahoo_symbol)
                 except Exception as exc:
                     logger.warning("Yahoo page fallback failed for %s: %s", normalized, exc)
             if normalized in self.CBOE_SYMBOLS:
@@ -236,3 +247,7 @@ class YahooMarketDataProvider(MarketDataProvider):
             return MarketQuote(symbol=normalized, source=self.SOURCE, status="UNAVAILABLE", reason="Online market data is temporarily unavailable.")
         except Exception:
             return MarketQuote(symbol=normalized, source=self.SOURCE, status="UNAVAILABLE", reason="Online market data is temporarily unavailable.")
+
+    def _request_quote_page_quote(self, normalized: str, yahoo_symbol: str) -> MarketQuote:
+        row = self._request_quote_page(yahoo_symbol)
+        return self._build_quote(normalized, row["regularMarketPrice"], row.get("regularMarketPreviousClose"), row.get("regularMarketTime"))
