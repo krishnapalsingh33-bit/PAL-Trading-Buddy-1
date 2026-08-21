@@ -5,7 +5,8 @@ type Item = { id: string; label: string; done: boolean };
 const DEFAULT: Item[] = [
   { id: "dxy", label: "DXY direction checked", done: false },
   { id: "news", label: "Today's news checked", done: false },
-  { id: "session", label: "London session checked", done: false },
+  { id: "london", label: "London session checked", done: false },
+  { id: "newyork", label: "New York session checked", done: false },
   { id: "sync", label: "Market sync checked", done: false },
 ];
 
@@ -20,7 +21,11 @@ export default function MorningChecklist() {
   useEffect(() => {
     try {
       const saved = window.localStorage.getItem(keyForToday());
-      if (saved) setItems(JSON.parse(saved));
+      if (saved) {
+        const parsed = JSON.parse(saved) as Item[];
+        const map = new Map(parsed.map((item) => [item.id, item]));
+        setItems(DEFAULT.map((item) => ({ ...item, done: Boolean(map.get(item.id)?.done) })));
+      }
     } catch { setItems(DEFAULT); }
   }, []);
 
@@ -37,7 +42,7 @@ export default function MorningChecklist() {
   return (
     <div className="mx-1 mb-4 rounded-2xl border border-cyan-300/10 bg-cyan-300/[.025] p-3">
       <div className="flex items-center justify-between gap-2">
-        <div><div className="text-[8px] font-bold uppercase tracking-[.2em] text-cyan-300">Morning routine</div><div className="mt-1 text-[10px] font-semibold text-white">2-minute market check</div></div>
+        <div><div className="text-[8px] font-bold uppercase tracking-[.2em] text-cyan-300">Morning routine</div><div className="mt-1 text-[10px] font-semibold text-white">5-step market check</div></div>
         <button type="button" onClick={() => setOpen((value) => !value)} className="rounded-lg border border-white/[.06] px-2 py-1 text-[8px] text-zinc-500">{open ? "−" : "+"}</button>
       </div>
       {open && <>
@@ -48,7 +53,7 @@ export default function MorningChecklist() {
         <div className="mt-3 space-y-1.5">
           {items.map((item) => <button key={item.id} type="button" onClick={() => toggle(item.id)} className="flex w-full items-center gap-2 rounded-lg border border-white/[.05] bg-black/15 px-2 py-1.5 text-left"><span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[9px] ${item.done ? "border-emerald-300/30 bg-emerald-300/10 text-emerald-300" : "border-white/[.10] text-transparent"}`}>✓</span><span className={`text-[8px] ${item.done ? "text-zinc-400 line-through" : "text-zinc-500"}`}>{item.label}</span></button>)}
         </div>
-        <div className={`mt-3 rounded-lg border px-2 py-2 text-center text-[8px] font-bold uppercase tracking-wider ${complete ? "border-emerald-300/20 bg-emerald-300/[.06] text-emerald-300" : "border-white/[.06] bg-black/15 text-zinc-600"}`}>{complete ? `Morning Brief Complete · ${timestamp}` : `${completed}/4 checks complete`}</div>
+        <div className={`mt-3 rounded-lg border px-2 py-2 text-center text-[8px] font-bold uppercase tracking-wider ${complete ? "border-emerald-300/20 bg-emerald-300/[.06] text-emerald-300" : "border-white/[.06] bg-black/15 text-zinc-600"}`}>{complete ? `DAY COMPLETE · ${timestamp}` : `${completed}/5 checks complete`}</div>
       </>}
     </div>
   );
