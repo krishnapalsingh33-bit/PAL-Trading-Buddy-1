@@ -11,6 +11,8 @@ import LandingPage from "./pages/LandingPage";
 import PalPageShell from "./components/layout/PalPageShell";
 import AuthGate from "./auth/AuthGate";
 import PALAssistantDock from "./components/ai/PALAssistantDock";
+import MarketWorkspace from "./components/MarketWorkspace";
+import { usePAL } from "./hooks/usePAL";
 import type { Page } from "./components/layout/Sidebar";
 import "./styles/pal-reference.css";
 
@@ -24,6 +26,19 @@ function getPageFromHash(): AppPage {
   if (hash === "macro-calendar") return "macro-calendar";
   if (hash === "reports") return "reports";
   return "dashboard";
+}
+
+function DashboardWorkspace() {
+  const { data } = usePAL();
+  const report: any = data?.report;
+  const markets = report?.markets ?? report?.macro?.markets ?? report?.market_data ?? {};
+
+  return (
+    <div className="pal-dashboard">
+      <Dashboard />
+      {report ? <MarketWorkspace markets={markets} report={report} /> : null}
+    </div>
+  );
 }
 
 function Workspace() {
@@ -58,11 +73,7 @@ function Workspace() {
   } else if (page === "reports") {
     content = <DailyReports onPageChange={navigate} />;
   } else {
-    content = (
-      <div className="pal-dashboard">
-        <Dashboard />
-      </div>
-    );
+    content = <DashboardWorkspace />;
   }
 
   return (
