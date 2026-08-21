@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import Dashboard from "./pages/Dashboard";
+import ForexIntelligence from "./pages/ForexIntelligence";
 import JournalProfessional from "./pages/JournalProfessional";
 import JournalScreenshots from "./components/journal/JournalScreenshots";
 import MacroDesk from "./pages/MacroDesk";
@@ -19,6 +20,7 @@ type AppPage = Page;
 function getPageFromHash(): AppPage {
   const hash = window.location.hash.replace(/^#/, "");
   if (hash === "journal") return "journal";
+  if (hash === "forex") return "forex";
   if (hash === "macro-desk") return "macro-desk";
   if (hash === "macro-view") return "macro-view";
   if (hash === "macro-calendar") return "macro-calendar";
@@ -49,6 +51,8 @@ function Workspace() {
         <JournalScreenshots />
       </PalPageShell>
     );
+  } else if (page === "forex") {
+    content = <ForexIntelligence activePage="forex" onPageChange={navigate} />;
   } else if (page === "macro-desk") {
     content = <MacroDesk onPageChange={navigate} />;
   } else if (page === "macro-view") {
