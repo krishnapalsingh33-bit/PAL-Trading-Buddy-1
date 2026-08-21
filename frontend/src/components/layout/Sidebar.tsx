@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import Badge from "../ui/Badge";
+import MorningChecklist from "../MorningChecklist";
 
 export type Page = "dashboard" | "journal" | "macro-desk" | "macro-view" | "macro-calendar" | "reports";
 type Brightness = "low" | "medium" | "high";
@@ -74,6 +75,8 @@ export default function Sidebar({ symbol, activePage = "dashboard", onPageChange
           })}
         </nav>
 
+        <MorningChecklist />
+
         <div className="border-t border-white/[.06] px-5 py-4">
           <div className="mb-4">
             <p className="mb-2 text-[9px] uppercase tracking-[.2em] text-zinc-600">Active Symbol</p>
@@ -140,30 +143,12 @@ function SettingsModal({
     <div className="fixed inset-0 z-[300] bg-black/75 p-4 backdrop-blur-md" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
       <div className="mx-auto flex h-full max-w-[1120px] overflow-hidden rounded-3xl border border-white/[.09] bg-[#080d12] shadow-[0_40px_120px_rgba(0,0,0,.75)]">
         <div className="hidden w-[250px] shrink-0 border-r border-white/[.07] bg-black/20 p-4 sm:block">
-          <div className="px-3 py-4">
-            <div className="text-lg font-semibold text-white">Settings</div>
-            <div className="mt-1 text-[10px] text-zinc-600">PAL Trading Buddy</div>
-          </div>
-          {TABS.map((item) => (
-            <button key={item} type="button" onClick={() => setTab(item)} className={`mb-1 flex w-full items-center rounded-xl px-3 py-3 text-left text-[11px] transition ${tab === item ? "bg-white/[.06] text-white" : "text-zinc-500 hover:bg-white/[.03] hover:text-zinc-200"}`}>
-              {item}
-            </button>
-          ))}
-          <div className="mt-6 rounded-2xl border border-emerald-300/10 bg-emerald-300/[.03] p-3">
-            <div className="text-[10px] font-semibold text-emerald-300">● System operational</div>
-            <p className="mt-2 text-[9px] leading-4 text-zinc-600">PAL market intelligence is running.</p>
-          </div>
+          <div className="px-3 py-4"><div className="text-lg font-semibold text-white">Settings</div><div className="mt-1 text-[10px] text-zinc-600">PAL Trading Buddy</div></div>
+          {TABS.map((item) => <button key={item} type="button" onClick={() => setTab(item)} className={`mb-1 flex w-full items-center rounded-xl px-3 py-3 text-left text-[11px] transition ${tab === item ? "bg-white/[.06] text-white" : "text-zinc-500 hover:bg-white/[.03] hover:text-zinc-200"}`}>{item}</button>)}
+          <div className="mt-6 rounded-2xl border border-emerald-300/10 bg-emerald-300/[.03] p-3"><div className="text-[10px] font-semibold text-emerald-300">● System operational</div><p className="mt-2 text-[9px] leading-4 text-zinc-600">PAL market intelligence is running.</p></div>
         </div>
-
         <div className="min-w-0 flex-1 overflow-y-auto">
-          <header className="sticky top-0 z-10 flex items-center justify-between border-b border-white/[.07] bg-[#080d12]/95 px-6 py-5 backdrop-blur-xl">
-            <div>
-              <div className="text-[9px] uppercase tracking-[.22em] text-cyan-300/70">PAL System</div>
-              <h2 className="mt-1 text-xl font-semibold text-white">{tab}</h2>
-            </div>
-            <button type="button" onClick={close} className="h-9 w-9 rounded-xl border border-white/[.07] text-zinc-500 hover:text-white">×</button>
-          </header>
-
+          <header className="sticky top-0 z-10 flex items-center justify-between border-b border-white/[.07] bg-[#080d12]/95 px-6 py-5 backdrop-blur-xl"><div><div className="text-[9px] uppercase tracking-[.22em] text-cyan-300/70">PAL System</div><h2 className="mt-1 text-xl font-semibold text-white">{tab}</h2></div><button type="button" onClick={close} className="h-9 w-9 rounded-xl border border-white/[.07] text-zinc-500 hover:text-white">×</button></header>
           <div className="p-6">
             {tab === "General" ? <GeneralSettings symbol={symbol} /> : null}
             {tab === "Appearance" ? <AppearanceSettings brightness={brightness} setBrightness={setBrightness} /> : null}
@@ -178,88 +163,12 @@ function SettingsModal({
   );
 }
 
-function GeneralSettings({ symbol }: { symbol: string }) {
-  return (
-    <div className="space-y-4">
-      <Panel title="Workspace">
-        <Field label="Default symbol" value={symbol} />
-        <Field label="Start page" value="Dashboard" />
-      </Panel>
-      <Toggle title="Remember my last page" text="Return to the page you were using when PAL closed." on />
-      <Toggle title="Compact information density" text="Fit more information on screen." />
-    </div>
-  );
-}
-
-function AppearanceSettings({ brightness, setBrightness }: { brightness: Brightness; setBrightness: (value: Brightness) => void }) {
-  return (
-    <div className="space-y-4">
-      <Panel title="Theme">
-        <div className="grid grid-cols-3 gap-3">
-          {(["low", "medium", "high"] as Brightness[]).map((value) => (
-            <button key={value} type="button" onClick={() => setBrightness(value)} className={`rounded-2xl border p-4 text-left ${brightness === value ? "border-cyan-300/30 bg-cyan-300/[.06]" : "border-white/[.06] bg-black/20"}`}>
-              <div className="text-lg">{value === "low" ? "◐" : value === "medium" ? "☼" : "☾"}</div>
-              <div className="mt-2 text-xs font-semibold text-white">{value[0].toUpperCase() + value.slice(1)}</div>
-              <div className="mt-1 text-[9px] text-zinc-600">Interface brightness</div>
-            </button>
-          ))}
-        </div>
-      </Panel>
-      <Toggle title="Motion effects" text="Use subtle live-state transitions." on />
-      <Toggle title="Reduce motion" text="Reduce animation for accessibility." />
-    </div>
-  );
-}
-
-function NotificationsSettings() {
-  return <div className="space-y-3"><Toggle title="Daily market report" text="Daily macro briefing notifications." on /><Toggle title="London briefing" text="London session briefing." on /><Toggle title="New York briefing" text="New York session briefing." on /><Toggle title="High-impact events" text="Major calendar releases." on /></div>;
-}
-
-function SecuritySettings() {
-  return (
-    <Panel title="PAL Account">
-      <p className="text-xs text-zinc-500">Sign in to use PAL. Google sign-in uses Google OAuth; PAL never needs your Gmail password.</p>
-      <button type="button" className="mt-5 w-full rounded-xl border border-white/[.08] bg-white/[.05] px-4 py-3 text-xs font-semibold text-white">Continue with Google</button>
-      <div className="my-4 text-center text-[9px] uppercase tracking-widest text-zinc-700">or email + PAL password</div>
-      <input type="email" placeholder="Email address" className="w-full rounded-xl border border-white/[.08] bg-black/30 px-3 py-3 text-xs text-white" />
-      <input type="password" placeholder="PAL password" className="mt-2 w-full rounded-xl border border-white/[.08] bg-black/30 px-3 py-3 text-xs text-white" />
-      <button type="button" className="mt-3 w-full rounded-xl bg-cyan-300 px-4 py-3 text-xs font-bold text-[#031014]">Sign in</button>
-      <p className="mt-3 text-[9px] leading-4 text-zinc-600">Authentication is configured separately through Firebase.</p>
-    </Panel>
-  );
-}
-
-function PrivacySettings() {
-  return <div className="space-y-3"><Toggle title="Provider freshness" text="Show source and freshness status." on /><Toggle title="Local preferences" text="Store theme preferences in this browser." on /></div>;
-}
-
-function AboutSettings() {
-  return (
-    <Panel title="PAL Trading Buddy">
-      <p className="text-xs text-zinc-500">AI market intelligence workspace.</p>
-      <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {[['Version', '0.1'], ['Frontend', 'React 19'], ['Data', 'Provider-backed'], ['Status', 'Operational']].map(([label, value]) => (
-          <div key={label} className="rounded-xl border border-white/[.06] p-3"><div className="text-[9px] uppercase text-zinc-700">{label}</div><div className="mt-1 text-xs font-semibold text-zinc-300">{value}</div></div>
-        ))}
-      </div>
-    </Panel>
-  );
-}
-
-function Panel({ title, children }: { title: string; children: React.ReactNode }) {
-  return <div className="rounded-2xl border border-white/[.07] bg-white/[.025] p-5"><h3 className="text-sm font-semibold text-white">{title}</h3><div className="mt-4">{children}</div></div>;
-}
-
-function Field({ label, value }: { label: string; value: string }) {
-  return <label className="mb-3 block text-[10px] text-zinc-500">{label}<input readOnly value={value} className="mt-2 w-full rounded-xl border border-white/[.08] bg-black/20 px-3 py-2.5 text-xs text-white" /></label>;
-}
-
-function Toggle({ title, text, on = false }: { title: string; text: string; on?: boolean }) {
-  const [enabled, setEnabled] = useState(on);
-  return (
-    <div className="flex items-center justify-between rounded-2xl border border-white/[.07] bg-white/[.02] p-4">
-      <div><div className="text-xs font-semibold text-zinc-200">{title}</div><div className="mt-1 text-[10px] text-zinc-600">{text}</div></div>
-      <button type="button" onClick={() => setEnabled((value) => !value)} className={`relative h-6 w-11 rounded-full ${enabled ? "bg-cyan-300/80" : "bg-zinc-800"}`}><span className={`absolute top-1 h-4 w-4 rounded-full bg-white transition ${enabled ? "left-6" : "left-1"}`} /></button>
-    </div>
-  );
-}
+function GeneralSettings({ symbol }: { symbol: string }) { return <div className="space-y-4"><Panel title="Workspace"><Field label="Default symbol" value={symbol} /><Field label="Start page" value="Dashboard" /></Panel><Toggle title="Remember my last page" text="Return to the page you were using when PAL closed." on /><Toggle title="Compact information density" text="Fit more information on screen." /></div>; }
+function AppearanceSettings({ brightness, setBrightness }: { brightness: Brightness; setBrightness: (value: Brightness) => void }) { return <div className="space-y-4"><Panel title="Theme"><div className="grid grid-cols-3 gap-3">{(["low", "medium", "high"] as Brightness[]).map((value) => <button key={value} type="button" onClick={() => setBrightness(value)} className={`rounded-2xl border p-4 text-left ${brightness === value ? "border-cyan-300/30 bg-cyan-300/[.06]" : "border-white/[.06] bg-black/20"}`}><div className="text-lg">{value === "low" ? "◐" : value === "medium" ? "☼" : "☾"}</div><div className="mt-2 text-xs font-semibold text-white">{value[0].toUpperCase() + value.slice(1)}</div><div className="mt-1 text-[9px] text-zinc-600">Interface brightness</div></button>)}</div></Panel><Toggle title="Motion effects" text="Use subtle live-state transitions." on /><Toggle title="Reduce motion" text="Reduce animation for accessibility." /></div>; }
+function NotificationsSettings() { return <div className="space-y-3"><Toggle title="Daily market report" text="Daily macro briefing notifications." on /><Toggle title="London briefing" text="London session briefing." on /><Toggle title="New York briefing" text="New York session briefing." on /><Toggle title="High-impact events" text="Major calendar releases." on /></div>; }
+function SecuritySettings() { return <Panel title="PAL Account"><p className="text-xs text-zinc-500">Sign in to use PAL. Google sign-in uses Google OAuth; PAL never needs your Gmail password.</p><button type="button" className="mt-5 w-full rounded-xl border border-white/[.08] bg-white/[.05] px-4 py-3 text-xs font-semibold text-white">Continue with Google</button><div className="my-4 text-center text-[9px] uppercase tracking-widest text-zinc-700">or email + PAL password</div><input type="email" placeholder="Email address" className="w-full rounded-xl border border-white/[.08] bg-black/30 px-3 py-3 text-xs text-white" /><input type="password" placeholder="PAL password" className="mt-2 w-full rounded-xl border border-white/[.08] bg-black/30 px-3 py-3 text-xs text-white" /><button type="button" className="mt-3 w-full rounded-xl bg-cyan-300 px-4 py-3 text-xs font-bold text-[#031014]">Sign in</button><p className="mt-3 text-[9px] leading-4 text-zinc-600">Authentication is configured separately through Firebase.</p></Panel>; }
+function PrivacySettings() { return <div className="space-y-3"><Toggle title="Provider freshness" text="Show source and freshness status." on /><Toggle title="Local preferences" text="Store theme preferences in this browser." on /></div>; }
+function AboutSettings() { return <Panel title="PAL Trading Buddy"><p className="text-xs text-zinc-500">AI market intelligence workspace.</p><div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">{[['Version', '0.1'], ['Frontend', 'React 19'], ['Data', 'Provider-backed'], ['Status', 'Operational']].map(([label, value]) => <div key={label} className="rounded-xl border border-white/[.06] p-3"><div className="text-[9px] uppercase text-zinc-700">{label}</div><div className="mt-1 text-xs font-semibold text-zinc-300">{value}</div></div>)}</div></Panel>; }
+function Panel({ title, children }: { title: string; children: React.ReactNode }) { return <div className="rounded-2xl border border-white/[.07] bg-white/[.025] p-5"><h3 className="text-sm font-semibold text-white">{title}</h3><div className="mt-4">{children}</div></div>; }
+function Field({ label, value }: { label: string; value: string }) { return <label className="mb-3 block text-[10px] text-zinc-500">{label}<input readOnly value={value} className="mt-2 w-full rounded-xl border border-white/[.08] bg-black/20 px-3 py-2.5 text-xs text-white" /></label>; }
+function Toggle({ title, text, on = false }: { title: string; text: string; on?: boolean }) { const [enabled, setEnabled] = useState(on); return <div className="flex items-center justify-between rounded-2xl border border-white/[.07] bg-white/[.02] p-4"><div><div className="text-xs font-semibold text-zinc-200">{title}</div><div className="mt-1 text-[10px] text-zinc-600">{text}</div></div><button type="button" onClick={() => setEnabled((value) => !value)} className={`relative h-6 w-11 rounded-full ${enabled ? "bg-cyan-300/80" : "bg-zinc-800"}`}><span className={`absolute top-1 h-4 w-4 rounded-full bg-white transition ${enabled ? "left-6" : "left-1"}`} /></button></div>; }
