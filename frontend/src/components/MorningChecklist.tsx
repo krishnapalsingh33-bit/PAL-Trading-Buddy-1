@@ -3,13 +3,7 @@ import { usePAL } from "../hooks/usePAL";
 
 type Item = { id: string; label: string; done: boolean };
 type SavedState = { items: Item[]; completedAt?: string | null };
-
-type TodayState = {
-  right_now?: {
-    dxy?: { bias?: string; momentum?: number | null };
-    gbpusd?: { bias?: string; momentum?: number | null };
-  };
-};
+type TodayState = { right_now?: { dxy?: { bias?: string; momentum?: number | null }; gbpusd?: { bias?: string; momentum?: number | null } } };
 
 const DEFAULT: Item[] = [
   { id: "dxy", label: "DXY direction checked", done: false },
@@ -70,7 +64,7 @@ export default function MorningChecklist() {
     window.localStorage.setItem(todayKey(), JSON.stringify({ items, completedAt: timestamp } satisfies SavedState));
   }, [items, complete, completedAt]);
 
-  const today: TodayState = data?.report?.today?.today ?? {};
+  const today = (data?.report?.today?.today ?? {}) as TodayState;
   const rightNow = today.right_now ?? {};
   const completed = items.filter((item) => item.done).length;
   const timestamp = useMemo(
