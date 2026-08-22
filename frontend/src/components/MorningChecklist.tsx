@@ -12,37 +12,57 @@ const DEFAULT: Item[] = [
   { id: "sync", label: "Market sync checked", done: false },
 ];
 
-function keyForToday() { return `pal-morning-checklist-${new Date().toISOString().slice(0, 10)}`; }
-function bias(value: unknown) { const raw = String(value ?? "").toUpperCase(); if (raw.includes("BULL")) return "BULLISH"; if (raw.includes("BEAR")) return "BEARISH"; if (raw.includes("WARM")) return "WARMING UP"; if (raw === "NEUTRAL") return "NEUTRAL"; return "UNKNOWN"; }
+function todayKey() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `pal-morning-checklist-${y}-${m}-${d}`;
+}
+
+function loadToday(): { items: Item[]; completedAt: string | null } {
+  try {
+    const raw = window.localStorage.getItem(todayKey());
+    if (!raw) return { items: DEFAULT, completedAt: null };
+    const saved = JSON.parse(raw) as SavedState | Item[];
+    const savedItems = Array.isArray(saved) ? saved : saved.items ?? [];
+    const savedMap = new Map(savedItems.map((item) => [item.id, Boolean(item.done)]));
+    const items = DEFAULT.map((item) => ({ ...item, done: savedMap.get(item.id) ?? false }));
+    const completedAt = !Array.isArray(saved) && saved.completedAt
+      ? saved.completedAt
+      : items.every((item) => item.done)
+        ? new Date().toISOString()
+        : null;
+    return { items, completedAt };
+  } catch {
+    return { items: DEFAULT, completedAt: null };
+  }
+}
+
+function bias(value: unknown) {
+  const raw = String(value ?? "").toUpperCase();
+  if (raw.includes("BULL")) return "BULLISH";
+  if (raw.includes("BEAR")) return "BEARISH";
+  if (raw.includes("WARM")) return "WARMING UP";
+  if (raw === "NEUTRAL") return "NEUTRAL";
+  return "UNKNOWN";
+}
 
 export default function MorningChecklist() {
   const { data } = usePAL();
-  const [items, setItems] = useState<Item[]>(DEFAULT);
-  const [completedAt, setCompletedAt] = useState<string | null>(null);
+  // Read today's saved state synchronously so navigation/remounts never briefly show
+  // the checklist again before localStorage hydration completes.
+  const [{ items: initialItems, completedAt: initialCompletedAt }] = useState(loadToday);
+  const [items, setItems] = useState<Item[]>(initialItems);
+  const [completedAt, setCompletedAt] = useState<string | null>(initialCompletedAt);
   const [open, setOpen] = useState(true);
 
-  useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(keyForToday());
-      if (!raw) { setItems(DEFAULT); setCompletedAt(null); return; }
-      const saved = JSON.parse(raw) as SavedState | Item[];
-      const savedItems = Array.isArray(saved) ? saved : saved.items ?? [];
-      const savedMap = new Map(savedItems.map((item) => [item.id, Boolean(item.done)]));
-      const migrated = DEFAULT.map((item) => ({ ...item, done: savedMap.get(item.id) ?? false }));
-      setItems(migrated);
-      if (!Array.isArray(saved) && saved.completedAt) setCompletedAt(saved.completedAt);
-      else if (migrated.every((item) => item.done)) setCompletedAt(new Date().toISOString());
-    } catch {
-      setItems(DEFAULT);
-      setCompletedAt(null);
-    }
-  }, []);
+  const complete = items.length === 5 && items.every((item) => item.done);
 
-  const complete = items.every((item) => item.done);
   useEffect(() => {
     const timestamp = complete ? completedAt ?? new Date().toISOString() : null;
     if (timestamp !== completedAt) setCompletedAt(timestamp);
-    window.localStorage.setItem(keyForToday(), JSON.stringify({ items, completedAt: timestamp } satisfies SavedState));
+    window.localStorage.setItem(todayKey(), JSON.stringify({ items, completedAt: timestamp } satisfies SavedState));
   }, [items, complete, completedAt]);
 
   const today = data?.report?.today?.today ?? {};
@@ -55,7 +75,8 @@ export default function MorningChecklist() {
     setItems((current) => current.map((item) => item.id === id ? { ...item, done: !item.done } : item));
   };
 
-  // Completed routines are intentionally removed from the sidebar for the remainder of the day.
+  // Once all five are complete, remove the component entirely. On any other page and
+  // later return to Dashboard, the synchronous localStorage initializer keeps it hidden.
   if (complete) return null;
 
   return (
