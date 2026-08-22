@@ -4,6 +4,13 @@ import { usePAL } from "../hooks/usePAL";
 type Item = { id: string; label: string; done: boolean };
 type SavedState = { items: Item[]; completedAt?: string | null };
 
+type TodayState = {
+  right_now?: {
+    dxy?: { bias?: string; momentum?: number | null };
+    gbpusd?: { bias?: string; momentum?: number | null };
+  };
+};
+
 const DEFAULT: Item[] = [
   { id: "dxy", label: "DXY direction checked", done: false },
   { id: "news", label: "Today's news checked", done: false },
@@ -50,14 +57,12 @@ function bias(value: unknown) {
 
 export default function MorningChecklist() {
   const { data } = usePAL();
-  // Read today's saved state synchronously so navigation/remounts never briefly show
-  // the checklist again before localStorage hydration completes.
   const [{ items: initialItems, completedAt: initialCompletedAt }] = useState(loadToday);
   const [items, setItems] = useState<Item[]>(initialItems);
   const [completedAt, setCompletedAt] = useState<string | null>(initialCompletedAt);
   const [open, setOpen] = useState(true);
 
-  const complete = items.length === 5 && items.every((item) => item.done);
+  const complete = items.length === DEFAULT.length && items.every((item) => item.done);
 
   useEffect(() => {
     const timestamp = complete ? completedAt ?? new Date().toISOString() : null;
@@ -65,18 +70,19 @@ export default function MorningChecklist() {
     window.localStorage.setItem(todayKey(), JSON.stringify({ items, completedAt: timestamp } satisfies SavedState));
   }, [items, complete, completedAt]);
 
-  const today = data?.report?.today?.today ?? {};
-  const rightNow = today?.right_now ?? {};
+  const today: TodayState = data?.report?.today?.today ?? {};
+  const rightNow = today.right_now ?? {};
   const completed = items.filter((item) => item.done).length;
-  const timestamp = useMemo(() => completedAt ? new Date(completedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : null, [completedAt]);
+  const timestamp = useMemo(
+    () => completedAt ? new Date(completedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : null,
+    [completedAt],
+  );
 
   const toggle = (id: string) => {
     if (complete) return;
     setItems((current) => current.map((item) => item.id === id ? { ...item, done: !item.done } : item));
   };
 
-  // Once all five are complete, remove the component entirely. On any other page and
-  // later return to Dashboard, the synchronous localStorage initializer keeps it hidden.
   if (complete) return null;
 
   return (
