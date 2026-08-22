@@ -20,6 +20,18 @@ class MarketDataService:
         self._right_now: dict[str, dict[str, Any]] = {}
         self._lock = Lock()
 
+    @staticmethod
+    def _intraday_market_closed() -> bool:
+        now = datetime.now(timezone.utc)
+        # Main FX/DXY spot market is closed from Friday 21:00 UTC through Sunday 21:00 UTC.
+        if now.weekday() == 5:
+            return True
+        if now.weekday() == 6 and now.hour < 21:
+            return True
+        if now.weekday() == 4 and now.hour >= 21:
+            return True
+        return False
+
     def _cached(self, symbol: str) -> MarketQuote | None:
         with self._lock:
             entry = self._cache.get(symbol)
@@ -40,13 +52,20 @@ class MarketDataService:
             return {"status": "WARMING_UP", "momentum_percent": None, "price": None, "points": []}
         try:
             momentum, price, points = getter(symbol)
+            points = list(points or [])
+            if momentum is not None:
+                status = "CURRENT"
+            elif self._intraday_market_closed():
+                status = "MARKET_CLOSED"
+            else:
+                status = "WARMING_UP"
             with self._lock:
                 previous = self._right_now.get(symbol, {})
                 self._right_now[symbol] = {
-                    "status": "CURRENT" if momentum is not None else "WARMING_UP",
+                    "status": status,
                     "momentum_percent": round(float(momentum), 4) if momentum is not None else None,
                     "price": price,
-                    "points": list(points or []),
+                    "points": points,
                     "updated_at": datetime.now(timezone.utc).isoformat(),
                     "previous_momentum": previous.get("momentum_percent"),
                 }
@@ -54,7 +73,14 @@ class MarketDataService:
         except Exception:
             with self._lock:
                 previous = self._right_now.get(symbol)
-            return previous or {"status": "WARMING_UP", "momentum_percent": None, "price": None, "points": []}
+            if previous:
+                return previous
+            return {
+                "status": "MARKET_CLOSED" if self._intraday_market_closed() else "WARMING_UP",
+                "momentum_percent": None,
+                "price": None,
+                "points": [],
+            }
 
     def get_market_data(self, symbol: str, force_refresh: bool = False) -> MarketQuote:
         normalized = symbol.upper()
@@ -92,7 +118,7 @@ class MarketDataService:
                 right_now = {"status": "NOT_TRACKED", "momentum_percent": None, "price": quote.price, "points": []}
             data["right_now_momentum_percent"] = right_now.get("momentum_percent")
             data["right_now_status"] = right_now.get("status")
-            data["right_now_price"] = right_now.get("price")
+            data["right_now_price"] = right_now.get("price") or quote.price
             data["right_now_points"] = right_now.get("points", [])
             data["right_now_previous_momentum"] = right_now.get("previous_momentum")
             snapshot[symbol] = data
