@@ -25,21 +25,25 @@ jobs:
 
       - name: Install frontend dependencies
         working-directory: frontend
-        run: npm install --include=dev
+        run: npm install --include=dev --no-package-lock --force
+
+      - name: Install frontend build tools explicitly
+        working-directory: frontend
+        run: npm install --no-save --include=dev --no-package-lock typescript@6.0.3 vite@8.2.0 @vitejs/plugin-react@6.0.5
 
       - name: Verify frontend toolchain
         working-directory: frontend
         run: |
           node --version
           npm --version
-          npx --no-install tsc --version
-          npx --no-install vite --version
+          .\node_modules\.bin\tsc.cmd --version
+          .\node_modules\.bin\vite.cmd --version
 
       - name: Build frontend
         working-directory: frontend
         run: |
-          npx --no-install tsc -b
-          npx --no-install vite build
+          .\node_modules\.bin\tsc.cmd -b
+          .\node_modules\.bin\vite.cmd build
 
       - name: Install backend dependencies
         working-directory: backend
