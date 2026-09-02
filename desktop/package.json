@@ -1,0 +1,40 @@
+{
+  "name": "pal-trading-buddy-desktop",
+  "version": "1.0.0",
+  "description": "PAL Trading Buddy — desktop market intelligence terminal",
+  "main": "main.cjs",
+  "author": "PAL Trading Buddy",
+  "private": true,
+  "scripts": {
+    "dist": "electron-builder --win nsis"
+  },
+  "devDependencies": {
+    "electron": "^39.2.7",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.paltradingbuddy.desktop",
+    "productName": "PAL Trading Buddy",
+    "artifactName": "PAL-Trading-Buddy-Setup-${version}.${ext}",
+    "directories": { "output": "dist" },
+    "files": [
+      "main.cjs",
+      "package.json"
+    ],
+    "extraResources": [
+      { "from": "../frontend/dist", "to": "frontend" },
+      { "from": "backend/PALBackend", "to": "backend" }
+    ],
+    "win": {
+      "target": "nsis",
+      "publisherName": "PAL Trading Buddy"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "PAL Trading Buddy"
+    }
+  }
+}
