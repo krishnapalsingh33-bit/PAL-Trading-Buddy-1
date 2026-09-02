@@ -23,11 +23,10 @@
     ],
     "extraResources": [
       { "from": "../frontend/dist", "to": "frontend" },
-      { "from": "backend/PALBackend", "to": "backend" }
+      { "from": "backend/PALBackend.exe", "to": "backend/PALBackend.exe" }
     ],
     "win": {
-      "target": "nsis",
-      "publisherName": "PAL Trading Buddy"
+      "target": "nsis"
     },
     "nsis": {
       "oneClick": false,
