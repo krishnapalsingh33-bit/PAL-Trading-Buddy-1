@@ -3,9 +3,11 @@
 from pathlib import Path
 from PyInstaller.utils.hooks import collect_submodules
 
-ROOT = Path(__file__).resolve().parents[2]
+# GitHub Actions runs PyInstaller from the repository root. The spec file
+# is evaluated as Python source, where __file__ is not guaranteed to exist.
+ROOT = Path.cwd()
 BACKEND = ROOT / "backend"
-LAUNCHER = Path(__file__).resolve().parent / "backend_launcher.py"
+LAUNCHER = ROOT / "desktop" / "packaging" / "backend_launcher.py"
 
 hiddenimports = []
 for package in ["analysis", "api", "models", "providers", "services"]:
