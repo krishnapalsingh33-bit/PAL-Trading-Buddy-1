@@ -25,11 +25,21 @@ jobs:
 
       - name: Install frontend dependencies
         working-directory: frontend
-        run: npm install
+        run: npm install --include=dev
+
+      - name: Verify frontend toolchain
+        working-directory: frontend
+        run: |
+          node --version
+          npm --version
+          npx --no-install tsc --version
+          npx --no-install vite --version
 
       - name: Build frontend
         working-directory: frontend
-        run: npm run build
+        run: |
+          npx --no-install tsc -b
+          npx --no-install vite build
 
       - name: Install backend dependencies
         working-directory: backend
