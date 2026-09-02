@@ -17,26 +17,23 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: pip
-          cache-dependency-path: backend/requirements.txt
 
       - name: Install frontend dependencies
         working-directory: frontend
-        run: npm ci
+        run: npm install
 
       - name: Build frontend
         working-directory: frontend
         run: npm run build
 
       - name: Install backend dependencies
-        run: python -m pip install -r backend/requirements.txt
+        working-directory: backend
+        run: python -m pip install -r requirements.txt
 
       - name: Install PyInstaller
         run: python -m pip install pyinstaller
@@ -59,6 +56,16 @@ jobs:
       - name: Build Windows installer
         working-directory: desktop
         run: npm run dist
+
+      - name: Verify installer
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem "desktop/dist/PAL-Trading-Buddy-Setup-*.exe" -ErrorAction SilentlyContinue
+          if (!$installer) {
+            Write-Error "PAL Trading Buddy installer was not created."
+            exit 1
+          }
+          Write-Host "Created installer: $($installer.FullName)"
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
