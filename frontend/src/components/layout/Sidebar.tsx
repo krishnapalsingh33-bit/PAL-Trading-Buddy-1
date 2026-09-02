@@ -1,6 +1,45 @@
 import { useEffect, useState } from "react";
 import Badge from "../ui/Badge";
+
 export type Page = "dashboard";
 type Brightness = "low" | "medium" | "high";
 type Props = { symbol: string; activePage?: Page; onPageChange?(page: Page): void };
-export default function Sidebar({ symbol, activePage = "dashboard", onPageChange }: Props) { const [brightness,setBrightness]=useState<Brightness>("medium"); useEffect(()=>{const saved=window.localStorage.getItem("pal-sidebar-brightness") as Brightness|null; if(saved==="low"||saved==="medium"||saved==="high") setBrightness(saved)},[]); useEffect(()=>{document.documentElement.dataset.palBrightness=brightness;window.localStorage.setItem("pal-sidebar-brightness",brightness)},[brightness]); return <aside className="sticky top-0 flex h-screen w-[250px] shrink-0 flex-col border-r border-cyan-300/[.07] bg-[#020811]"><div className="border-b border-white/[.06] px-6 py-5"><div className="flex items-center gap-3"><div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-cyan-300/20 bg-cyan-300/[.05] text-2xl text-cyan-300">⌁</div><div><h1 className="text-[25px] font-semibold text-white">PAL</h1><p className="text-[12px] text-zinc-500">Market Intelligence</p></div></div></div><nav className="flex-1 px-4 py-5"><button type="button" onClick={()=>onPageChange?.("dashboard")} className={`flex w-full items-center gap-3 rounded-xl border px-3 py-3 text-left transition ${activePage==="dashboard"?"border-cyan-300/35 bg-emerald-300/[.10] text-white":"border-transparent text-zinc-400 hover:bg-white/[.025] hover:text-white"}`}><span className="flex h-7 w-7 items-center justify-center rounded-lg bg-cyan-300/[.10] text-cyan-300">⌂</span><span className="text-[14px] font-medium">Dashboard</span><span className="ml-auto text-cyan-300">›</span></button></nav><div className="border-t border-white/[.06] px-5 py-4"><div className="mb-4"><p className="mb-2 text-[9px] uppercase tracking-[.2em] text-zinc-600">Active Symbol</p><Badge text={symbol}/></div><div><div className="mb-2 flex items-center justify-between"><p className="text-[9px] uppercase tracking-[.2em] text-zinc-600">Theme</p><span className="text-[8px] font-bold text-cyan-300/70">{brightness.toUpperCase()}</span></div><div className="flex gap-1.5 rounded-xl border border-white/[.06] bg-white/[.018] p-1">{(["low","medium","high"] as Brightness[]).map(value=><button key={value} type="button" onClick={()=>setBrightness(value)} className={`flex h-8 flex-1 items-center justify-center rounded-lg ${brightness===value?"bg-cyan-300/[.12] text-cyan-300":"text-zinc-600 hover:text-zinc-300"}`}>{value==="low"?"◐":value==="medium"?"☼":"☾"}</button>)}</div></div></div></aside> }
+
+export default function Sidebar({ symbol, activePage = "dashboard", onPageChange }: Props) {
+  const [brightness, setBrightness] = useState<Brightness>("medium");
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem("pal-sidebar-brightness") as Brightness | null;
+    if (saved === "low" || saved === "medium" || saved === "high") setBrightness(saved);
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.dataset.palBrightness = brightness;
+    window.localStorage.setItem("pal-sidebar-brightness", brightness);
+  }, [brightness]);
+
+  return (
+    <aside className="sticky top-0 flex h-screen w-[250px] shrink-0 flex-col border-r border-cyan-300/[.07] bg-[#020811]">
+      <div className="border-b border-white/[.06] px-6 py-5">
+        <div className="flex items-center gap-3">
+          <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-cyan-300/20 bg-cyan-300/[.05] text-2xl text-cyan-300">⌁</div>
+          <div><h1 className="text-[25px] font-semibold text-white">PAL</h1><p className="text-[12px] text-zinc-500">Market Intelligence</p></div>
+        </div>
+      </div>
+
+      <nav className="flex-1 px-4 py-5">
+        <button type="button" onClick={() => onPageChange?.("dashboard")} className={`flex w-full items-center gap-3 rounded-xl border px-3 py-3 text-left transition ${activePage === "dashboard" ? "border-cyan-300/35 bg-emerald-300/[.10] text-white shadow-[0_0_24px_rgba(32,217,255,.08)]" : "border-transparent text-zinc-400 hover:bg-white/[.025] hover:text-white"}`}>
+          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-cyan-300/[.10] text-cyan-300">⌂</span>
+          <span className="text-[14px] font-medium">Dashboard</span><span className="ml-auto text-cyan-300">›</span>
+        </button>
+      </nav>
+
+      <div className="border-t border-white/[.06] px-5 py-4">
+        <div className="mb-4"><p className="mb-2 text-[9px] uppercase tracking-[.2em] text-zinc-600">Active Symbol</p><Badge text={symbol} /></div>
+        <div><div className="mb-2 flex items-center justify-between"><p className="text-[9px] uppercase tracking-[.2em] text-zinc-600">Theme</p><span className="text-[8px] font-bold text-cyan-300/70">{brightness.toUpperCase()}</span></div>
+          <div className="flex gap-1.5 rounded-xl border border-white/[.06] bg-white/[.018] p-1">{(["low","medium","high"] as Brightness[]).map(value => <button key={value} type="button" onClick={() => setBrightness(value)} className={`flex h-8 flex-1 items-center justify-center rounded-lg ${brightness===value ? "bg-cyan-300/[.12] text-cyan-300" : "text-zinc-600 hover:text-zinc-300"}`}>{value==="low"?"◐":value==="medium"?"☼":"☾"}</button>)}</div>
+        </div>
+      </div>
+    </aside>
+  );
+}
