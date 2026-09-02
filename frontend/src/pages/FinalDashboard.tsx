@@ -3,79 +3,104 @@ import Sidebar, { type Page } from "../components/layout/Sidebar";
 import { usePAL } from "../hooks/usePAL";
 
 type Props = { onPageChange: (page: Page) => void };
-type Bias = "BULLISH" | "BEARISH" | "NEUTRAL" | "UNKNOWN";
+type Bias = "BULLISH" | "BEARISH" | "NEUTRAL";
 
-const SOURCE_URLS: Record<string, string> = {
-  "Google News": "https://news.google.com/", GDELT: "https://www.gdeltproject.org/",
-  "Forex Factory": "https://www.forexfactory.com/calendar", Apify: "https://apify.com/",
+const SOURCES: Record<string, string> = {
+  "Google News": "https://news.google.com/",
+  GDELT: "https://www.gdeltproject.org/",
+  "Forex Factory": "https://www.forexfactory.com/calendar",
+  Apify: "https://apify.com/",
   BLS: "https://www.bls.gov/schedule/news_release/",
   "Federal Reserve": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
   "UK Office for National Statistics": "https://www.ons.gov.uk/releasecalendar",
-  Treasury: "https://home.treasury.gov/resource-center/data-chart-center/interest-rates",
-  FRED: "https://fred.stlouisfed.org/", "Yahoo Finance": "https://finance.yahoo.com/",
+  FRED: "https://fred.stlouisfed.org/",
+  "Yahoo Finance": "https://finance.yahoo.com/",
 };
 
-function bias(v: unknown): Bias { const s = String(v ?? "").toUpperCase(); if (s.includes("BULL")) return "BULLISH"; if (s.includes("BEAR")) return "BEARISH"; if (s === "NEUTRAL") return "NEUTRAL"; return "UNKNOWN"; }
-function biasText(b: Bias) { return b === "BULLISH" ? "text-emerald-300" : b === "BEARISH" ? "text-red-300" : "text-amber-300"; }
-function biasDot(b: Bias) { return b === "BULLISH" ? "bg-emerald-300" : b === "BEARISH" ? "bg-red-300" : "bg-amber-300"; }
-function impactClass(v: unknown) { const s = String(v ?? "").toUpperCase(); return s.includes("HIGH") ? "border-red-300/20 bg-red-300/[.05] text-red-300" : s.includes("MEDIUM") ? "border-amber-300/20 bg-amber-300/[.05] text-amber-300" : "border-white/[.07] bg-white/[.02] text-zinc-500"; }
-function timeIST(v: unknown) { const d = new Date(String(v ?? "")); return Number.isNaN(d.getTime()) ? "—" : d.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" }); }
-function dateIST(v: unknown) { const d = new Date(String(v ?? "")); return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", weekday: "short", day: "2-digit", month: "short" }); }
-function sourceUrl(x: any) { return x?.source_url || x?.url || SOURCE_URLS[x?.source] || SOURCE_URLS[x?.provider]; }
-function confidenceLabel(v: number) { return v >= 75 ? "HIGH CONVICTION" : v >= 55 ? "MODERATE" : v >= 35 ? "LOW-MODERATE" : "LOW EVIDENCE"; }
-function weekend(d: Date) { const w = new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", weekday: "short" }).format(d); return w === "Sat" || w === "Sun"; }
+function bias(value: unknown): Bias {
+  const s = String(value ?? "").toUpperCase();
+  if (s.includes("BULL")) return "BULLISH";
+  if (s.includes("BEAR")) return "BEARISH";
+  return "NEUTRAL";
+}
+function badge(b: Bias) {
+  return b === "BULLISH" ? "border-emerald-300/20 bg-emerald-300/[.07] text-emerald-300" : b === "BEARISH" ? "border-red-300/20 bg-red-300/[.07] text-red-300" : "border-amber-300/20 bg-amber-300/[.06] text-amber-300";
+}
+function bar(v: number) {
+  return <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/[.06]"><div className="h-full rounded-full bg-cyan-300 transition-all duration-700" style={{ width: `${Math.max(0, Math.min(100, v))}%` }} /></div>;
+}
+function timeIST(value: unknown) {
+  const d = new Date(String(value ?? ""));
+  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" });
+}
+function dateIST(value: unknown) {
+  const d = new Date(String(value ?? ""));
+  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", weekday: "short", day: "2-digit", month: "short" });
+}
+function sourceUrl(item: any) { return item?.source_url || item?.url || SOURCES[item?.source] || SOURCES[item?.provider]; }
+function isWeekend(d: Date) { const day = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Kolkata", weekday: "short" }).format(d); return day === "Sat" || day === "Sun"; }
 
 function BiasCard({ label, value, confidence, reasons }: { label: string; value: unknown; confidence: number; reasons: string[] }) {
   const b = bias(value);
-  return <article className="rounded-2xl border border-white/[.07] bg-[#09151b] p-5">
-    <div className="flex items-start justify-between"><div className="text-[9px] font-bold uppercase tracking-[.22em] text-zinc-500">{label}</div><div className="text-3xl font-semibold tabular-nums">{confidence}%</div></div>
-    <div className="mt-3 flex items-center gap-3"><span className={`h-3 w-3 rounded-full ${biasDot(b)}`} /><span className={`text-2xl font-black ${biasText(b)}`}>{b}</span></div>
-    <div className="mt-2 text-[8px] uppercase tracking-[.16em] text-zinc-600">{confidenceLabel(confidence)}</div>
-    <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/[.05]"><div className={`h-full rounded-full ${b === "BULLISH" ? "bg-emerald-300" : b === "BEARISH" ? "bg-red-300" : "bg-amber-300"}`} style={{ width: `${Math.max(0, Math.min(100, confidence))}%` }} /></div>
-    {reasons.length ? <div className="mt-4 space-y-2">{reasons.slice(0, 3).map((r, i) => <div key={i} className="flex gap-2 text-[10px] leading-4 text-zinc-400"><span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${biasDot(b)}`} /><span>{r}</span></div>)}</div> : <div className="mt-4 text-[10px] text-zinc-600">No strong directional evidence available.</div>}
+  return <article className="rounded-2xl border border-white/[.07] bg-[#0a171c] p-5">
+    <div className="flex items-center justify-between"><div className="text-[9px] font-bold uppercase tracking-[.2em] text-zinc-600">{label}</div><div className="text-3xl font-semibold tabular-nums">{Math.round(confidence)}%</div></div>
+    <div className="mt-4 flex items-center gap-3"><span className={`h-3 w-3 rounded-full ${b === "BULLISH" ? "bg-emerald-300" : b === "BEARISH" ? "bg-red-300" : "bg-amber-300"}`} /><span className={`text-2xl font-black ${badge(b).split(" ").slice(-1)[0]}`}>{b}</span></div>
+    <div className="mt-1 text-[8px] uppercase tracking-[.2em] text-zinc-700">fundamental evidence</div>
+    {bar(confidence)}
+    {reasons.length > 0 && <div className="mt-4 space-y-2">{reasons.slice(0, 3).map((x, i) => <div key={i} className="text-[10px] leading-4 text-zinc-400">• {x}</div>)}</div>}
   </article>;
 }
 
 export default function FinalDashboard({ onPageChange }: Props) {
-  const { data, isLoading, error } = usePAL(); const [now, setNow] = useState(() => new Date());
+  const { data, isLoading, error } = usePAL();
+  const [now, setNow] = useState(() => new Date());
   useEffect(() => { const t = window.setInterval(() => setNow(new Date()), 1000); return () => window.clearInterval(t); }, []);
 
-  const report: any = data?.report ?? {}; const macro = report.macro ?? {}; const macroBias = report.news?.macro_bias ?? {}; const today = report.today?.today ?? {};
+  if (isLoading) return <div className="min-h-screen bg-[#05080b] grid place-items-center text-zinc-400">Loading PAL Market Intelligence…</div>;
+  if (error || !data?.report) return <div className="min-h-screen bg-[#05080b] grid place-items-center text-red-300">PAL data feed unavailable. Check the backend and refresh.</div>;
+
+  const report: any = data.report;
+  const macro: any = report.macro ?? {};
+  const macroBias: any = report.news?.macro_bias ?? {};
   const headlines: any[] = Array.isArray(report.news?.headlines) ? report.news.headlines : [];
   const upcoming: any[] = Array.isArray(report.news?.upcoming_events) ? report.news.upcoming_events : [];
   const recent: any[] = Array.isArray(report.news?.recent_events) ? report.news.recent_events : [];
-  const dxy = bias(macro.dxy?.bias ?? macroBias.dxy?.bias ?? today.dxy?.bias); const pair = bias(macro.gbpusd?.bias ?? macroBias.gbpusd?.bias ?? today.gbpusd?.bias ?? today.bias);
-  const dxyConf = Number(macro.dxy?.confidence ?? macroBias.dxy?.confidence ?? 0); const pairConf = Number(macro.gbpusd?.confidence ?? macroBias.gbpusd?.confidence ?? today.confidence ?? 0);
-  const alignment = String(macroBias.alignment ?? "MIXED").toUpperCase(); const closed = weekend(now);
-  const importantEvents = useMemo(() => upcoming.slice(0, 8), [upcoming]); const news = useMemo(() => headlines.slice(0, 6), [headlines]);
-  const highEvents = useMemo(() => upcoming.filter(e => String(e?.impact ?? "").toUpperCase().includes("HIGH")), [upcoming]);
-  const sources = useMemo(() => Array.from(new Set([...(report.news?.calendar_sources ?? []), ...(macroBias?.evidence?.sources ?? []), ...headlines.map(x => x.source || x.provider).filter(Boolean)])).filter(x => SOURCE_URLS[String(x)]), [report.news, macroBias, headlines]);
-  const regime = closed ? "MARKET CLOSED" : highEvents.length ? "EVENT-DRIVEN" : pairConf >= 60 ? "DIRECTIONAL" : "MIXED / WATCH";
-  const direction = pair === "BULLISH" ? "GBP/USD upside bias" : pair === "BEARISH" ? "GBP/USD downside bias" : "No strong GBP/USD direction";
+  const closed = isWeekend(now);
+  const dxy = bias(macro.dxy?.bias ?? macroBias.dxy?.bias);
+  const pair = bias(macro.gbpusd?.bias ?? macroBias.gbpusd?.bias);
+  const dxyConf = Number(macro.dxy?.confidence ?? macroBias.dxy?.confidence ?? 0);
+  const pairConf = Number(macro.gbpusd?.confidence ?? macroBias.gbpusd?.confidence ?? 0);
+  const alignment = String(macroBias.alignment ?? "MIXED");
+  const visibleEvents = useMemo(() => [...upcoming, ...recent].sort((a, b) => new Date(String(a.time ?? 0)).getTime() - new Date(String(b.time ?? 0)).getTime()).slice(0, 8), [upcoming, recent]);
+  const highImpact = upcoming.filter((e: any) => String(e.impact ?? "").toUpperCase().includes("HIGH"));
+  const regime = highImpact.length ? "EVENT-DRIVEN" : pair === "BULLISH" || pair === "BEARISH" ? "DIRECTIONAL" : "WATCH";
+  const finalVerdict = pair === "BULLISH" && pairConf >= 55 ? "GBP/USD UPSIDE BIAS" : pair === "BEARISH" && pairConf >= 55 ? "GBP/USD DOWNSIDE BIAS" : "NO STRONG DIRECTION";
+  const sourceNames = Array.from(new Set([...(Array.isArray(report.news?.calendar_sources) ? report.news.calendar_sources : []), ...(Array.isArray(macroBias.evidence?.sources) ? macroBias.evidence.sources : [])]));
 
-  if (isLoading) return <div className="min-h-screen grid place-items-center bg-[#05080b] text-zinc-400">Loading PAL Market Intelligence…</div>;
-  if (error || !data?.report) return <div className="min-h-screen grid place-items-center bg-[#05080b] text-red-300">PAL data feed unavailable. Check the backend and refresh.</div>;
+  return <div className="min-h-screen bg-[#05080b] text-white">
+    <div className="flex min-h-screen"><Sidebar symbol="GBPUSD" activePage="dashboard" onPageChange={onPageChange} /><main className="min-w-0 flex-1 overflow-y-auto">
+      <div className={`border-b px-5 py-2 text-center text-[9px] font-bold uppercase tracking-[.25em] ${closed ? "border-amber-300/10 bg-amber-300/[.04] text-amber-300" : "border-cyan-300/10 bg-cyan-300/[.025] text-cyan-300"}`}>{closed ? "FX MARKET CLOSED · WEEKEND" : "● LIVE MULTI-SOURCE MARKET INTELLIGENCE"}</div>
+      <div className="mx-auto max-w-[1450px] p-5 lg:p-7">
+        <header className="rounded-[26px] border border-cyan-300/10 bg-[radial-gradient(circle_at_top_right,rgba(34,211,238,.07),transparent_32%),#08131a] p-6">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between"><div><div className="text-[9px] font-black uppercase tracking-[.28em] text-cyan-300">PAL · MARKET INTELLIGENCE</div><h1 className="mt-2 text-3xl font-semibold tracking-tight">{closed ? "Market Intelligence Dashboard" : `${now.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour12: false })} · ${String(now.toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", weekday: "long" }))} Session`}</h1><div className="mt-1 text-xs text-zinc-500">{dateIST(now)} · IST · Evidence-backed macro, news & economic catalysts</div></div><div className="rounded-xl border border-white/[.07] bg-black/20 px-4 py-3 text-right"><div className="font-mono text-lg">{now.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour12: false })}</div><div className="text-[8px] uppercase tracking-[.18em] text-zinc-600">LIVE IST</div></div></div>
+          <div className="mt-5 rounded-2xl border border-white/[.06] bg-black/20 p-4"><div className="text-[8px] font-bold uppercase tracking-[.2em] text-zinc-600">SESSION REGIME</div><div className="mt-2 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"><div><h2 className="text-xl font-semibold">{macro.headline || "Current macro picture"}</h2><p className="mt-1 max-w-3xl text-[10px] text-zinc-500">{macro.summary || "PAL is combining current macro evidence and scheduled catalysts."}</p></div><span className={`w-fit rounded-lg border px-3 py-2 text-[9px] font-black ${regime === "DIRECTIONAL" ? "border-emerald-300/20 bg-emerald-300/[.07] text-emerald-300" : regime === "EVENT-DRIVEN" ? "border-amber-300/20 bg-amber-300/[.07] text-amber-300" : "border-white/[.08] text-zinc-400"}`}>{regime}</span></div></div>
+        </header>
 
-  return <div className="min-h-screen bg-[#05080b] text-white"><div className="flex min-h-screen"><Sidebar symbol="GBPUSD" activePage="dashboard" onPageChange={onPageChange}/><main className="min-w-0 flex-1 overflow-y-auto">
-    <div className={`border-b px-6 py-2 text-center text-[9px] font-bold uppercase tracking-[.25em] ${closed ? "text-amber-300 bg-amber-300/[.03] border-amber-300/10" : "text-cyan-300 bg-cyan-300/[.02] border-cyan-300/10"}`}>{closed ? "FX MARKET CLOSED · WEEKEND" : "● LIVE MULTI-SOURCE MARKET INTELLIGENCE"}</div>
-    <div className="mx-auto max-w-[1380px] p-5 lg:p-7">
-      <header className="rounded-[28px] border border-cyan-300/10 bg-[radial-gradient(circle_at_top_right,rgba(34,211,238,.07),transparent_32%),#08131a] p-6">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between"><div><div className="text-[9px] font-black uppercase tracking-[.3em] text-cyan-300">PAL · MARKET INTELLIGENCE</div><h1 className="mt-2 text-3xl font-semibold tracking-tight">{closed ? "Market Dashboard" : `${now.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour12: false }).slice(0,2) >= "17" ? "New York" : "London"} Session Dashboard`}</h1><p className="mt-1 text-xs text-zinc-500">{dateIST(now)} · IST · evidence-backed macro, news and economic catalysts</p></div><div className="rounded-xl border border-white/[.07] bg-black/20 px-4 py-3 text-right"><div className="font-mono text-lg tabular-nums">{now.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour12: false })}</div><div className="text-[8px] uppercase tracking-[.2em] text-zinc-600">LIVE IST</div></div></div>
-        <div className="mt-6 rounded-2xl border border-white/[.06] bg-black/20 p-4"><div className="text-[8px] font-bold uppercase tracking-[.2em] text-zinc-600">SESSION REGIME</div><div className="mt-2 flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between"><div><h2 className="text-xl font-semibold">{macro.headline || "Current market picture from the latest evidence"}</h2>{macro.summary ? <p className="mt-1 max-w-4xl text-[10px] leading-5 text-zinc-500">{macro.summary}</p> : null}</div><span className={`w-fit rounded-lg border px-3 py-2 text-[9px] font-black ${regime === "DIRECTIONAL" ? "border-emerald-300/20 bg-emerald-300/[.05] text-emerald-300" : regime === "EVENT-DRIVEN" ? "border-amber-300/20 bg-amber-300/[.05] text-amber-300" : "border-white/[.07] text-zinc-400"}`}>{regime}</span></div></div>
-        <div className="mt-4 grid gap-3 md:grid-cols-2"><BiasCard label="DXY" value={dxy} confidence={dxyConf} reasons={macro.dxy?.reasons ?? macroBias.dxy?.reasons ?? []}/><BiasCard label="GBP / USD" value={pair} confidence={pairConf} reasons={macro.gbpusd?.reasons ?? macroBias.gbpusd?.reasons ?? []}/></div>
-        <div className="mt-4 grid gap-3 sm:grid-cols-3"><div className="rounded-2xl border border-white/[.06] bg-black/20 p-4"><div className="text-[8px] uppercase tracking-[.18em] text-zinc-600">Relationship</div><div className="mt-2 text-xl font-semibold text-amber-300">{alignment === "USD FAVOURED" ? "USD FAVOURED" : alignment === "GBP FAVOURED" ? "GBP FAVOURED" : "MIXED"}</div></div><div className="rounded-2xl border border-white/[.06] bg-black/20 p-4"><div className="text-[8px] uppercase tracking-[.18em] text-zinc-600">Upcoming</div><div className="mt-2 text-xl font-semibold text-amber-300">{upcoming.length}</div></div><div className="rounded-2xl border border-white/[.06] bg-black/20 p-4"><div className="text-[8px] uppercase tracking-[.18em] text-zinc-600">Fresh news</div><div className="mt-2 text-xl font-semibold text-cyan-300">{headlines.length}</div></div></div>
-      </header>
+        <section className="mt-4 grid gap-4 xl:grid-cols-2"><BiasCard label="DXY" value={dxy} confidence={dxyConf} reasons={macro.dxy?.reasons ?? macroBias.dxy?.reasons ?? []}/><BiasCard label="GBP / USD" value={pair} confidence={pairConf} reasons={macro.gbpusd?.reasons ?? macroBias.gbpusd?.reasons ?? []}/></section>
 
-      {importantEvents.length ? <section className="mt-4 rounded-2xl border border-white/[.07] bg-[#08131a] overflow-hidden"><div className="border-b border-white/[.06] px-5 py-4"><div className="text-[9px] font-bold uppercase tracking-[.2em] text-cyan-300">Major events · IST</div><h2 className="mt-1 text-lg font-semibold">What can move USD / GBP next</h2></div><div className="divide-y divide-white/[.05]">{importantEvents.map((e,i) => { const url = sourceUrl(e); const released = e.actual != null || e.forecast != null || e.previous != null; return <div key={e.id ?? i} className="grid gap-3 px-5 py-4 lg:grid-cols-[110px_1fr_auto] lg:items-center"><div><div className="text-[8px] text-zinc-700">{dateIST(e.time)}</div><div className="mt-1 text-sm font-semibold text-cyan-300">{timeIST(e.time)}</div></div><div><div className="flex flex-wrap items-center gap-2"><span className="text-xs font-semibold">{e.title}</span><span className={`rounded-md border px-2 py-1 text-[8px] font-bold ${impactClass(e.impact)}`}>{e.impact ?? "—"}</span><span className="rounded-md border border-white/[.07] px-2 py-1 text-[8px] text-zinc-500">{e.currency ?? "—"}</span></div>{released ? <div className="mt-2 flex flex-wrap gap-4 text-[8px] text-zinc-600"><span>Actual <b className="text-zinc-300">{e.actual ?? "—"}</b></span><span>Forecast <b className="text-zinc-300">{e.forecast ?? "—"}</b></span><span>Previous <b className="text-zinc-300">{e.previous ?? "—"}</b></span></div> : null}</div><div className="text-left lg:text-right"><div className="text-[8px] text-zinc-600">{e.source ?? "Provider"}</div>{url ? <a className="mt-1 inline-block text-[8px] text-cyan-300/70" href={url} target="_blank" rel="noreferrer">Verify ↗</a> : null}</div></div>})}</div></section> : null}
+        <section className="mt-4 grid gap-4 lg:grid-cols-3"><article className="rounded-2xl border border-white/[.07] bg-white/[.018] p-5"><div className="text-[8px] font-bold uppercase tracking-[.2em] text-zinc-600">Relationship</div><div className={`mt-2 text-2xl font-black ${alignment.includes("USD") ? "text-red-300" : alignment.includes("GBP") ? "text-emerald-300" : "text-amber-300"}`}>{alignment.includes("_") ? alignment.replace("_", " ") : alignment}</div><div className="mt-1 text-[9px] text-zinc-600">DXY and GBP/USD macro relationship</div></article><article className="rounded-2xl border border-white/[.07] bg-white/[.018] p-5"><div className="text-[8px] font-bold uppercase tracking-[.2em] text-zinc-600">Upcoming</div><div className="mt-2 text-2xl font-black text-amber-300">{upcoming.length || 0}</div><div className="mt-1 text-[9px] text-zinc-600">catalysts on the radar</div></article><article className="rounded-2xl border border-white/[.07] bg-white/[.018] p-5"><div className="text-[8px] font-bold uppercase tracking-[.2em] text-zinc-600">Fresh News</div><div className="mt-2 text-2xl font-black text-cyan-300">{headlines.length || 0}</div><div className="mt-1 text-[9px] text-zinc-600">current macro headlines</div></article></section>
 
-      {news.length ? <section className="mt-4 rounded-2xl border border-white/[.07] bg-[#08131a] overflow-hidden"><div className="border-b border-white/[.06] px-5 py-4"><div className="text-[9px] font-bold uppercase tracking-[.2em] text-cyan-300">News intelligence</div><h2 className="mt-1 text-lg font-semibold">Latest relevant macro headlines</h2></div><div className="grid gap-3 p-4 lg:grid-cols-2">{news.map((h,i) => { const url = sourceUrl(h); return <article key={h.id ?? i} className="rounded-xl border border-white/[.05] bg-black/20 p-4"><div className="flex items-center justify-between gap-3"><div className="flex flex-wrap gap-2"><span className={`rounded-md border px-2 py-1 text-[8px] font-bold ${impactClass(h.impact)}`}>{h.impact ?? "NEWS"}</span>{h.currency ? <span className="rounded-md border border-white/[.07] px-2 py-1 text-[8px] text-zinc-500">{h.currency}</span> : null}</div><span className="text-[8px] text-zinc-700">{timeIST(h.published_at ?? h.published)}</span></div><h3 className="mt-3 text-[11px] leading-5 text-zinc-300">{h.title}</h3><div className="mt-3 flex justify-between"><span className="text-[8px] text-zinc-600">{h.source ?? h.provider ?? "Provider"}</span>{url ? <a className="text-[8px] text-cyan-300/70" href={url} target="_blank" rel="noreferrer">Verify ↗</a> : null}</div></article>})}</div></section> : null}
+        {visibleEvents.length > 0 && <section className="mt-4 rounded-2xl border border-white/[.07] bg-[#081219] overflow-hidden"><div className="border-b border-white/[.06] px-5 py-4 flex items-center justify-between"><div><div className="text-[9px] font-bold uppercase tracking-[.2em] text-cyan-300">Major events · IST</div><h2 className="mt-1 text-lg font-semibold">Economic calendar</h2></div><span className="text-[8px] text-zinc-600">provider-backed</span></div><div className="divide-y divide-white/[.05]">{visibleEvents.map((e:any,i:number) => { const released = recent.some((r:any) => (r.id ?? `${r.title}${r.time}`) === (e.id ?? `${e.title}${e.time}`)); const url = sourceUrl(e); return <div key={e.id ?? i} className="grid gap-3 px-5 py-4 md:grid-cols-[100px_1fr_150px]"><div><div className="text-[8px] text-zinc-700">{dateIST(e.time)}</div><div className="mt-1 text-sm font-semibold text-cyan-300">{timeIST(e.time)}</div></div><div><div className="flex flex-wrap items-center gap-2"><span className="text-xs font-semibold">{e.title}</span><span className={`rounded-md border px-2 py-1 text-[8px] font-bold ${String(e.impact ?? "").toUpperCase().includes("HIGH") ? "border-red-300/20 bg-red-300/[.06] text-red-300" : "border-amber-300/20 bg-amber-300/[.05] text-amber-300"}`}>{e.impact ?? "MEDIUM"}</span><span className="rounded-md border border-white/[.06] px-2 py-1 text-[8px] text-zinc-500">{e.currency ?? "—"}</span><span className="text-[8px] uppercase text-zinc-700">{released ? "RELEASED" : "UPCOMING"}</span></div>{(e.actual ?? e.forecast ?? e.previous) != null && <div className="mt-2 grid grid-cols-3 gap-2 text-[8px] text-zinc-600"><span>Actual <b className="text-zinc-400">{e.actual ?? "—"}</b></span><span>Forecast <b className="text-zinc-400">{e.forecast ?? "—"}</b></span><span>Previous <b className="text-zinc-400">{e.previous ?? "—"}</b></span></div>}</div><div className="flex items-center justify-start md:justify-end"><span className="text-[8px] text-zinc-600">{e.source ?? "Provider"}</span>{url && <a className="ml-2 text-[8px] text-cyan-300/70" href={url} target="_blank" rel="noreferrer">Verify ↗</a>}</div></div>; })}</div></section>}
 
-      {recent.length || highEvents.length ? <section className="mt-4 grid gap-4 lg:grid-cols-2">{recent.length ? <article className="rounded-2xl border border-white/[.07] bg-white/[.015] p-5"><div className="text-[9px] uppercase tracking-[.2em] text-zinc-600">Recent releases</div><h2 className="mt-1 text-lg font-semibold">What just happened</h2><div className="mt-4 space-y-2">{recent.slice(0,5).map((e,i) => <div key={e.id ?? i} className="rounded-xl border border-white/[.05] bg-black/20 p-3"><div className="flex justify-between gap-3"><span className="text-[10px] text-zinc-300">{e.title}</span><span className="text-[8px] text-zinc-600">{timeIST(e.time)}</span></div>{e.actual != null || e.forecast != null ? <div className="mt-2 text-[8px] text-zinc-600">Actual {e.actual ?? "—"} · Forecast {e.forecast ?? "—"}</div> : null}</div>)}</div></article> : null}{highEvents.length ? <article className="rounded-2xl border border-red-300/10 bg-red-300/[.02] p-5"><div className="text-[9px] uppercase tracking-[.2em] text-red-300/70">Risk radar</div><h2 className="mt-1 text-lg font-semibold">High-impact events ahead</h2><div className="mt-4 space-y-2">{highEvents.slice(0,5).map((e,i) => <div key={i} className="rounded-xl border border-red-300/10 bg-black/20 p-3"><div className="text-[10px] font-semibold text-zinc-300">{e.title}</div><div className="mt-1 text-[8px] text-zinc-600">{e.currency} · {dateIST(e.time)} · {timeIST(e.time)}</div></div>)}</div></article> : null}</section> : null}
+        {headlines.length > 0 && <section className="mt-4 rounded-2xl border border-white/[.07] bg-[#081219] overflow-hidden"><div className="border-b border-white/[.06] px-5 py-4 flex items-center justify-between"><div><div className="text-[9px] font-bold uppercase tracking-[.2em] text-emerald-300/70">News intelligence</div><h2 className="mt-1 text-lg font-semibold">Latest macro headlines</h2></div><span className="text-[8px] text-zinc-600">{headlines.length} articles</span></div><div className="grid gap-3 p-4 lg:grid-cols-2">{headlines.slice(0, 6).map((h:any,i:number) => { const url = sourceUrl(h); return <article key={h.id ?? i} className="rounded-xl border border-white/[.05] bg-black/20 p-4"><div className="flex items-center justify-between"><span className="text-[8px] uppercase tracking-[.16em] text-zinc-600">{h.currency ?? "CROSS"} · {h.source ?? h.provider ?? "Provider"}</span><span className="text-[8px] text-zinc-700">{timeIST(h.published_at ?? h.published)}</span></div><div className="mt-2 text-[11px] leading-5 text-zinc-300">{h.title}</div>{url && <a className="mt-2 inline-block text-[8px] text-cyan-300/70" href={url} target="_blank" rel="noreferrer">Open source ↗</a>}</article>; })}</div></section>}
 
-      <section className="mt-4 rounded-2xl border border-white/[.08] bg-gradient-to-r from-cyan-300/[.03] to-emerald-300/[.02] p-5"><div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between"><div><div className="text-[9px] uppercase tracking-[.2em] text-cyan-300">Final market verdict</div><h2 className="mt-1 text-2xl font-semibold">{direction}</h2><p className="mt-2 text-xs text-zinc-500">DXY {dxy} · GBP/USD {pair} · {alignment}</p></div><div className="flex flex-wrap gap-2"><span className="rounded-lg border border-white/[.07] px-3 py-2 text-[9px] font-bold">DXY {dxyConf}%</span><span className="rounded-lg border border-white/[.07] px-3 py-2 text-[9px] font-bold">GBP/USD {pairConf}%</span><span className={`rounded-lg border px-3 py-2 text-[9px] font-bold ${pairConf >= 60 ? "border-emerald-300/20 bg-emerald-300/[.05] text-emerald-300" : "border-amber-300/20 bg-amber-300/[.05] text-amber-300"}`}>{pairConf >= 60 ? "FAVORABLE EVIDENCE" : "WATCH"}</span></div></div></section>
+        {highImpact.length > 0 && <section className="mt-4 rounded-2xl border border-red-300/10 bg-red-300/[.025] p-5"><div className="text-[9px] font-bold uppercase tracking-[.2em] text-red-300">Risk radar</div><div className="mt-2 text-lg font-semibold">{highImpact.length} high-impact catalyst{highImpact.length > 1 ? "s" : ""}</div><div className="mt-1 text-[10px] text-zinc-500">Scheduled events are shown as risk until released; PAL does not use an upcoming event as fake directional evidence.</div></section>}
 
-      {sources.length ? <section className="mt-4 rounded-2xl border border-white/[.07] bg-white/[.015] p-5"><div className="text-[9px] uppercase tracking-[.2em] text-zinc-600">Source verification</div><div className="mt-3 flex flex-wrap gap-2">{sources.map((name: any) => <a key={String(name)} href={SOURCE_URLS[String(name)]} target="_blank" rel="noreferrer" className="rounded-lg border border-white/[.06] bg-black/20 px-3 py-2 text-[8px] text-zinc-400 hover:border-cyan-300/20 hover:text-cyan-300">{String(name)} ↗</a>)}</div></section> : null}
-      <footer className="py-6 text-center text-[8px] uppercase tracking-[.18em] text-zinc-700">PAL · Clean dashboard · future events are catalysts, not invented directional evidence</footer>
-    </div>
-  </main></div></div>;
+        <section className="mt-4 rounded-2xl border border-cyan-300/10 bg-[radial-gradient(circle_at_top_right,rgba(34,211,238,.06),transparent_35%),#081219] p-5"><div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between"><div><div className="text-[9px] font-bold uppercase tracking-[.2em] text-cyan-300">Final market verdict</div><div className="mt-1 text-2xl font-semibold">{finalVerdict}</div><div className="mt-1 text-[10px] text-zinc-500">DXY {dxy} · GBP/USD {pair} · {pairConf}% confidence · {alignment}</div></div><span className={`rounded-lg border px-4 py-2 text-[9px] font-black ${badge(pair)}`}>{pair}</span></div></section>
+
+        <section className="mt-4 rounded-2xl border border-white/[.07] bg-white/[.018] p-5"><div className="text-[9px] font-bold uppercase tracking-[.2em] text-zinc-600">Source verification</div><div className="mt-3 flex flex-wrap gap-2">{sourceNames.slice(0, 10).map((name:string) => { const url = SOURCES[name]; return url ? <a key={name} href={url} target="_blank" rel="noreferrer" className="rounded-lg border border-white/[.05] bg-black/20 px-3 py-2 text-[8px] text-zinc-400 hover:border-cyan-300/20">{name} ↗</a> : <span key={name} className="rounded-lg border border-white/[.05] px-3 py-2 text-[8px] text-zinc-600">{name}</span>; })}</div></section>
+        <footer className="py-6 text-center text-[8px] uppercase tracking-[.18em] text-zinc-700">PAL · clean dashboard · source-attributed macro intelligence · no fabricated values</footer>
+      </div>
+    </main></div>
+  </div>;
 }
