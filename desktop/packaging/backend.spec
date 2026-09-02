@@ -5,20 +5,17 @@ from PyInstaller.utils.hooks import collect_submodules
 
 ROOT = Path(__file__).resolve().parents[2]
 BACKEND = ROOT / "backend"
+LAUNCHER = Path(__file__).resolve().parent / "backend_launcher.py"
 
 hiddenimports = []
-for package in [
-    "analysis", "api", "models", "providers", "services",
-]:
+for package in ["analysis", "api", "models", "providers", "services"]:
     try:
         hiddenimports += collect_submodules(package)
     except Exception:
         pass
 
-# Requests / FastAPI dependencies are normally discovered automatically.
-
 analysis = Analysis(
-    [str(BACKEND / "main.py")],
+    [str(LAUNCHER)],
     pathex=[str(BACKEND)],
     binaries=[],
     datas=[],
@@ -31,7 +28,6 @@ analysis = Analysis(
 )
 
 pyz = PYZ(analysis.pure)
-
 exe = EXE(
     pyz,
     analysis.scripts,
