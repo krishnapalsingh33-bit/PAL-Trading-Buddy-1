@@ -36,20 +36,19 @@ jobs:
             "webDir": "frontend/dist"
           }
           EOF
-          node -e "console.log('capacitor cli:', require('./node_modules/@capacitor/cli/package.json').version)"
 
       - name: Add Android platform
         run: node ./node_modules/@capacitor/cli/bin/capacitor add android
 
-      - name: Inject mobile launch configuration
+      - name: Configure Android local backend host
         run: |
           python - <<'PY'
           from pathlib import Path
-          p = Path('frontend/src/App.tsx')
+          p = Path('frontend/src/api/pal.ts')
           s = p.read_text()
-          marker = 'const mobileLike = typeof window !== "undefined" && window.matchMedia("(max-width: 900px)").matches;'
-          s = s.replace(marker, marker + '\n  const nativeMobile = typeof window !== "undefined" && /Android|iPhone|iPad|Capacitor/i.test(navigator.userAgent);')
-          s = s.replace('if (desktop || mobileLike) return <Workspace />;', 'if (desktop || mobileLike || nativeMobile) return <Workspace />;')
+          old = 'const baseURL = import.meta.env.VITE_PAL_API_URL || "http://127.0.0.1:8000";'
+          if old in s:
+              s = s.replace(old, 'const isAndroid = /Android/i.test(navigator.userAgent);\nconst baseURL = import.meta.env.VITE_PAL_API_URL || (isAndroid ? "http://10.0.2.2:8000" : "http://127.0.0.1:8000");')
           p.write_text(s)
           PY
 
