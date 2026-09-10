@@ -43,11 +43,12 @@ function Workspace() {
 
 function Entry() {
   const desktop = isDesktopApp();
+  const mobileLike = typeof window !== "undefined" && window.matchMedia("(max-width: 900px)").matches;
   const [showLogin, setShowLogin] = useState(
     () => window.sessionStorage.getItem("pal_enter_workspace") === "1",
   );
 
-  if (desktop) return <Workspace />;
+  if (desktop || mobileLike) return <Workspace />;
 
   if (!showLogin) {
     return (
