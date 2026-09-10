@@ -14,10 +14,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package.json
 
       - name: Install frontend dependencies
         working-directory: frontend
-        run: npm install --include=dev
+        run: npm install --include=dev --no-audit --no-fund
 
       - name: Verify frontend toolchain
         working-directory: frontend
@@ -26,13 +28,15 @@ jobs:
           npm --version
           node -e "console.log('vite package:', require('./node_modules/vite/package.json').version)"
           node -e "console.log('typescript package:', require('./node_modules/typescript/package.json').version)"
+          test -x ./node_modules/.bin/vite
+          test -x ./node_modules/.bin/tsc
 
       - name: Build frontend
         working-directory: frontend
-        run: npm run build
+        run: ./node_modules/.bin/tsc -b && ./node_modules/.bin/vite build
 
       - name: Install Capacitor
-        run: npm install --save-dev @capacitor/cli @capacitor/core @capacitor/android
+        run: npm install --save-dev @capacitor/cli @capacitor/core @capacitor/android --no-audit --no-fund
 
       - name: Init Capacitor
         run: |
