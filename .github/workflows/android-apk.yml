@@ -19,6 +19,12 @@ jobs:
         working-directory: frontend
         run: npm install --include=dev --no-audit --no-fund
 
+      - name: Set mobile backend URL
+        run: |
+          cat > frontend/.env.production <<'EOF'
+          VITE_PAL_API_URL=https://pal-trading-buddy-1.onrender.com
+          EOF
+
       - name: Build frontend
         working-directory: frontend
         run: |
@@ -39,24 +45,6 @@ jobs:
 
       - name: Add Android platform
         run: node ./node_modules/@capacitor/cli/bin/capacitor add android
-
-      - name: Configure Android local backend host
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          p = Path('frontend/src/api/pal.ts')
-          s = p.read_text()
-          old = 'const baseURL = import.meta.env.VITE_PAL_API_URL || "http://127.0.0.1:8000";'
-          if old in s:
-              s = s.replace(old, 'const isAndroid = /Android/i.test(navigator.userAgent);\nconst baseURL = import.meta.env.VITE_PAL_API_URL || (isAndroid ? "http://10.0.2.2:8000" : "http://127.0.0.1:8000");')
-          p.write_text(s)
-          PY
-
-      - name: Rebuild frontend for mobile
-        working-directory: frontend
-        run: |
-          node ./node_modules/typescript/bin/tsc -b
-          node ./node_modules/vite/bin/vite.js build
 
       - name: Sync Android
         run: node ./node_modules/@capacitor/cli/bin/capacitor sync android
