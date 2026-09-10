@@ -37,10 +37,27 @@ jobs:
           }
           EOF
           node -e "console.log('capacitor cli:', require('./node_modules/@capacitor/cli/package.json').version)"
-          test -f ./node_modules/@capacitor/cli/bin/capacitor
 
       - name: Add Android platform
         run: node ./node_modules/@capacitor/cli/bin/capacitor add android
+
+      - name: Inject mobile launch configuration
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('frontend/src/App.tsx')
+          s = p.read_text()
+          marker = 'const mobileLike = typeof window !== "undefined" && window.matchMedia("(max-width: 900px)").matches;'
+          s = s.replace(marker, marker + '\n  const nativeMobile = typeof window !== "undefined" && /Android|iPhone|iPad|Capacitor/i.test(navigator.userAgent);')
+          s = s.replace('if (desktop || mobileLike) return <Workspace />;', 'if (desktop || mobileLike || nativeMobile) return <Workspace />;')
+          p.write_text(s)
+          PY
+
+      - name: Rebuild frontend for mobile
+        working-directory: frontend
+        run: |
+          node ./node_modules/typescript/bin/tsc -b
+          node ./node_modules/vite/bin/vite.js build
 
       - name: Sync Android
         run: node ./node_modules/@capacitor/cli/bin/capacitor sync android
