@@ -21,7 +21,11 @@ jobs:
 
       - name: Build frontend
         working-directory: frontend
-        run: npm run build
+        run: |
+         npm install --include=dev
+         npx tsc -b
+         npx vite build
+        
 
       - name: Install Capacitor
         run: npm install --save-dev @capacitor/cli @capacitor/core @capacitor/android
