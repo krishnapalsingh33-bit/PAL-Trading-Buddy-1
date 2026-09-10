@@ -4,11 +4,8 @@ function getBaseURL() {
     const configured = String(import.meta.env.VITE_PAL_API_URL || "").trim();
     if (configured) return configured;
 
-    // Android emulator / BlueStacks can use the emulator host alias.
-    const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
-    if (/Android/i.test(ua)) return "http://10.0.2.2:8000";
-
-    return "http://127.0.0.1:8000";
+    // Mobile and web builds use the deployed PAL backend by default.
+    return "https://pal-trading-buddy-1.onrender.com";
 }
 
 const api = axios.create({
