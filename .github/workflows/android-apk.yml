@@ -17,15 +17,19 @@ jobs:
 
       - name: Install frontend dependencies
         working-directory: frontend
-        run: npm install
+        run: npm install --include=dev
+
+      - name: Verify frontend toolchain
+        working-directory: frontend
+        run: |
+          node --version
+          npm --version
+          node -e "console.log('vite package:', require('./node_modules/vite/package.json').version)"
+          node -e "console.log('typescript package:', require('./node_modules/typescript/package.json').version)"
 
       - name: Build frontend
         working-directory: frontend
-        run: |
-         npm install --include=dev
-         npm run build
-         
-        
+        run: npm run build
 
       - name: Install Capacitor
         run: npm install --save-dev @capacitor/cli @capacitor/core @capacitor/android
@@ -60,3 +64,4 @@ jobs:
         with:
           name: PAL-Trading-Buddy-Android
           path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
