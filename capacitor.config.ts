@@ -1,6 +1,4 @@
-import type { CapacitorConfig } from '@capacitor/cli';
-
-const config: CapacitorConfig = {
+const config = {
   appId: 'com.paltradingbuddy.app',
   appName: 'PAL Trading Buddy',
   webDir: 'frontend/dist',
