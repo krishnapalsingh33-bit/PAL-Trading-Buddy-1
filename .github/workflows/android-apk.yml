@@ -28,12 +28,14 @@ jobs:
           npm --version
           node -e "console.log('vite package:', require('./node_modules/vite/package.json').version)"
           node -e "console.log('typescript package:', require('./node_modules/typescript/package.json').version)"
-          test -x ./node_modules/.bin/vite
-          test -x ./node_modules/.bin/tsc
+          test -f ./node_modules/vite/bin/vite.js
+          test -f ./node_modules/typescript/bin/tsc
 
       - name: Build frontend
         working-directory: frontend
-        run: ./node_modules/.bin/tsc -b && ./node_modules/.bin/vite build
+        run: |
+          node ./node_modules/typescript/bin/tsc -b
+          node ./node_modules/vite/bin/vite.js build
 
       - name: Install Capacitor
         run: npm install --save-dev @capacitor/cli @capacitor/core @capacitor/android --no-audit --no-fund
