@@ -43,11 +43,14 @@ function Workspace() {
 
 function Entry() {
   const desktop = isDesktopApp();
+  const mobileLike = typeof window !== "undefined" && window.matchMedia("(max-width: 900px)").matches;
   const [showLogin, setShowLogin] = useState(
     () => window.sessionStorage.getItem("pal_enter_workspace") === "1",
   );
 
-  if (desktop) return <Workspace />;
+  // Native/mobile builds should open the PAL workspace directly.
+  // Desktop Electron also keeps its existing direct-launch behavior.
+  if (desktop || mobileLike) return <Workspace />;
 
   if (!showLogin) {
     return (
