@@ -37,23 +37,30 @@ jobs:
           node ./node_modules/typescript/bin/tsc -b
           node ./node_modules/vite/bin/vite.js build
 
-      - name: Install Capacitor
-        run: npm install --save-dev @capacitor/cli @capacitor/core @capacitor/android --no-audit --no-fund
+      - name: Install Capacitor dependencies
+        working-directory: frontend
+        run: npm install --save-dev @capacitor/cli @capacitor/core @capacitor/android typescript --no-audit --no-fund
 
-      - name: Init Capacitor
+      - name: Initialize Capacitor
         run: |
-          if [ ! -f capacitor.config.ts ] && [ ! -f capacitor.config.json ]; then
-            npx cap init "PAL Trading Buddy" "com.paltradingbuddy.app" --web-dir=frontend/dist --npm-client=npm
+          if [ ! -f capacitor.config.json ] && [ ! -f capacitor.config.ts ]; then
+            cat > capacitor.config.json <<'EOF'
+          {
+            "appId": "com.paltradingbuddy.app",
+            "appName": "PAL Trading Buddy",
+            "webDir": "frontend/dist"
+          }
+          EOF
           fi
 
-      - name: Add Android
+      - name: Add Android platform
         run: |
           if [ ! -d android ]; then
-            npx cap add android
+            npx --yes @capacitor/cli@latest add android
           fi
 
       - name: Sync Android
-        run: npx cap sync android
+        run: npx --yes @capacitor/cli@latest sync android
 
       - uses: actions/setup-java@v4
         with:
