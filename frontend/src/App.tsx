@@ -48,23 +48,23 @@ function Entry() {
     () => window.sessionStorage.getItem("pal_enter_workspace") === "1",
   );
 
-  if (desktop || mobileLike) return <Workspace />;
+  if (desktop) return <Workspace />;
 
-  if (!showLogin) {
+  if (showLogin || mobileLike) {
     return (
-      <LandingPage
-        onEnter={() => {
-          window.sessionStorage.setItem("pal_enter_workspace", "1");
-          setShowLogin(true);
-        }}
-      />
+      <AuthGate>
+        <Workspace />
+      </AuthGate>
     );
   }
 
   return (
-    <AuthGate>
-      <Workspace />
-    </AuthGate>
+    <LandingPage
+      onEnter={() => {
+        window.sessionStorage.setItem("pal_enter_workspace", "1");
+        setShowLogin(true);
+      }}
+    />
   );
 }
 
