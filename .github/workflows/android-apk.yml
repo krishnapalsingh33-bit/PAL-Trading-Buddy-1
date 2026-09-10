@@ -19,50 +19,29 @@ jobs:
         working-directory: frontend
         run: npm install --include=dev --no-audit --no-fund
 
-      - name: Verify frontend toolchain
-        working-directory: frontend
-        run: |
-          node --version
-          npm --version
-          node -e "console.log('vite package:', require('./node_modules/vite/package.json').version)"
-          node -e "console.log('typescript package:', require('./node_modules/typescript/package.json').version)"
-          test -f ./node_modules/vite/bin/vite.js
-          test -f ./node_modules/typescript/bin/tsc
-
       - name: Build frontend
         working-directory: frontend
         run: |
           node ./node_modules/typescript/bin/tsc -b
           node ./node_modules/vite/bin/vite.js build
 
-      - name: Install Capacitor CLI dependencies
-        working-directory: frontend
-        run: npm install --save-dev @capacitor/cli @capacitor/core @capacitor/android typescript --no-audit --no-fund
-
-      - name: Prepare root Capacitor project
+      - name: Prepare Capacitor toolchain
         run: |
-          if [ ! -f package.json ]; then
-            npm init -y
-          fi
-          npm install --save-dev @capacitor/cli @capacitor/core @capacitor/android typescript --no-audit --no-fund
-          if [ ! -f capacitor.config.json ] && [ ! -f capacitor.config.ts ]; then
-            cat > capacitor.config.json <<'EOF'
+          npm init -y
+          npm install --save-dev @capacitor/cli@latest @capacitor/core@latest @capacitor/android@latest typescript@latest --no-audit --no-fund
+          cat > capacitor.config.json <<'EOF'
           {
             "appId": "com.paltradingbuddy.app",
             "appName": "PAL Trading Buddy",
             "webDir": "frontend/dist"
           }
           EOF
-          fi
 
       - name: Add Android platform
-        run: |
-          if [ ! -d android ]; then
-            npx --yes @capacitor/cli@latest add android
-          fi
+        run: npx --yes cap@latest add android
 
       - name: Sync Android
-        run: npx --yes @capacitor/cli@latest sync android
+        run: npx --yes cap@latest sync android
 
       - uses: actions/setup-java@v4
         with:
