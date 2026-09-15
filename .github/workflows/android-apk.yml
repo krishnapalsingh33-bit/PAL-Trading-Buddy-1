@@ -38,6 +38,24 @@ jobs:
           ! grep -R "127.0.0.1:8000" frontend/dist >/dev/null
           echo "Mobile build points to deployed Render backend."
 
+      - name: Smoke test deployed mobile API
+        run: |
+          python - <<'PY'
+          import json, sys, urllib.request
+          base = "https://pal-trading-buddy-1.onrender.com"
+          for path in ("/mobile/health", "/health"):
+              with urllib.request.urlopen(base + path, timeout=30) as r:
+                  body = json.loads(r.read().decode())
+                  if r.status != 200:
+                      raise SystemExit(f"{path}: HTTP {r.status}")
+                  print(path, body)
+          with urllib.request.urlopen(base + "/mobile/analyze/GBPUSD", timeout=120) as r:
+              body = json.loads(r.read().decode())
+              print("/mobile/analyze/GBPUSD", r.status, list(body.keys()))
+              if r.status != 200 or not isinstance(body, dict) or not body.get("success"):
+                  raise SystemExit("Mobile analysis endpoint did not return success=true")
+          PY
+
       - name: Prepare Capacitor toolchain
         run: |
           npm init -y
