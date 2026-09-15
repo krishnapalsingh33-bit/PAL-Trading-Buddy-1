@@ -1,0 +1,1 @@
+Trigger a fresh Android APK build for the mobile-app branch. This file exists only to force GitHub Actions to run after the mobile backend/API fixes. Do not use the old APK artifact.
