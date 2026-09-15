@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter
 
 from services.pal_service import PALService
@@ -12,24 +14,19 @@ def mobile_health():
         "success": True,
         "status": "healthy",
         "service": "PAL Trading Buddy Mobile API",
-        "version": "1.0.0",
+        "version": "1.1.0",
     }
 
 
 @router.get("/analyze/{symbol}")
 def mobile_analyze(symbol: str):
-    """Mobile-safe compatibility endpoint.
+    """Mobile-compatible PAL analysis endpoint.
 
-    It reuses PAL's existing analysis pipeline so the mobile app and
-    desktop app consume the same market-intelligence logic.
+    Reuses the existing PAL analysis pipeline, including live market
+    observation, macro/news intelligence and structured fallback behavior.
     """
-    from datetime import datetime, timezone
-
     symbol = symbol.upper()
     current_time = datetime.now(timezone.utc)
-
-    # Mobile uses the same PAL pipeline but does not depend on the
-    # calendar aggregation route during its initial connection test.
     report = service.analyze(symbol=symbol, news_events=[], current_time=current_time)
     return {
         "success": True,
