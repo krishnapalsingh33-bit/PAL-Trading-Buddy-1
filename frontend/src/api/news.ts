@@ -1,14 +1,9 @@
 import axios from "axios";
 import type { NewsData, NewsResponse } from "../types/news";
-
-function getBaseURL() {
-  const configured = String(import.meta.env.VITE_PAL_API_URL || "").trim();
-  if (configured) return configured;
-  return "https://pal-trading-buddy-1.onrender.com";
-}
+import { getApiBaseURL } from "./runtime";
 
 const newsApi = axios.create({
-  baseURL: getBaseURL(),
+  baseURL: getApiBaseURL(),
   timeout: 30000,
 });
 
