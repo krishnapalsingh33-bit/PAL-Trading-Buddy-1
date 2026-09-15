@@ -41,19 +41,34 @@ jobs:
       - name: Smoke test deployed mobile API
         run: |
           python - <<'PY'
-          import json, sys, urllib.request
+          import json
+          import urllib.request
+          import urllib.error
+
           base = "https://pal-trading-buddy-1.onrender.com"
-          for path in ("/mobile/health", "/health"):
-              with urllib.request.urlopen(base + path, timeout=30) as r:
-                  body = json.loads(r.read().decode())
-                  if r.status != 200:
-                      raise SystemExit(f"{path}: HTTP {r.status}")
-                  print(path, body)
-          with urllib.request.urlopen(base + "/mobile/analyze/GBPUSD", timeout=120) as r:
-              body = json.loads(r.read().decode())
-              print("/mobile/analyze/GBPUSD", r.status, list(body.keys()))
-              if r.status != 200 or not isinstance(body, dict) or not body.get("success"):
-                  raise SystemExit("Mobile analysis endpoint did not return success=true")
+
+          def get_json(path, timeout=30):
+              request = urllib.request.Request(base + path, headers={"User-Agent": "PAL-Mobile-CI/1.0"})
+              try:
+                  with urllib.request.urlopen(request, timeout=timeout) as response:
+                      return response.status, json.loads(response.read().decode())
+              except urllib.error.HTTPError as exc:
+                  body = exc.read().decode(errors="replace")
+                  raise SystemExit(f"{path}: HTTP {exc.code}: {body[:500]}")
+
+          for path in ("/", "/health", "/mobile/health"):
+              status, body = get_json(path)
+              print(path, status, body)
+              if status != 200:
+                  raise SystemExit(f"{path}: HTTP {status}")
+
+          status, body = get_json("/mobile/analyze/GBPUSD", timeout=180)
+          print("/mobile/analyze/GBPUSD", status, list(body.keys()) if isinstance(body, dict) else type(body).__name__)
+          if status != 200 or not isinstance(body, dict) or body.get("success") is not True:
+              raise SystemExit("/mobile/analyze/GBPUSD did not return success=true")
+          if "report" not in body:
+              raise SystemExit("/mobile/analyze/GBPUSD did not return a report")
+          print("Mobile API smoke test passed.")
           PY
 
       - name: Prepare Capacitor toolchain
@@ -74,7 +89,7 @@ jobs:
       - name: Sync Android
         run: node ./node_modules/@capacitor/cli/bin/capacitor sync android
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '21'
