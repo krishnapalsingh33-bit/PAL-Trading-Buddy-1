@@ -1,0 +1,1 @@
+Force a fresh Android build after centralizing the native mobile API runtime resolver. The mobile app must use the deployed Render backend, never localhost.
