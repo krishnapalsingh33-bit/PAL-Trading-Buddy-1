@@ -14,7 +14,7 @@ def mobile_health():
         "success": True,
         "status": "healthy",
         "service": "PAL Trading Buddy Mobile API",
-        "version": "1.2.0",
+        "version": "1.3.0",
     }
 
 
@@ -24,12 +24,6 @@ def mobile_analyze(symbol: str):
     current_time = datetime.now(timezone.utc)
     try:
         report = service.analyze(symbol=symbol, news_events=[], current_time=current_time)
-        return {
-            "success": True,
-            "symbol": symbol,
-            "timestamp": current_time.isoformat(),
-            "report": report,
-        }
     except Exception as exc:
         return {
             "success": False,
@@ -38,3 +32,18 @@ def mobile_analyze(symbol: str):
             "error": "PAL analysis is temporarily unavailable.",
             "detail": str(exc),
         }
+
+    if report is None:
+        return {
+            "success": False,
+            "symbol": symbol,
+            "timestamp": current_time.isoformat(),
+            "error": "PAL analysis returned no report.",
+        }
+
+    return {
+        "success": True,
+        "symbol": symbol,
+        "timestamp": current_time.isoformat(),
+        "report": report,
+    }
