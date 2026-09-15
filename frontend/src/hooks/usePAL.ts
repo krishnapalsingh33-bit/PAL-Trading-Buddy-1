@@ -13,7 +13,7 @@ export function usePAL() {
         queryFn: fetchPAL,
         refetchInterval: () => document.visibilityState === "visible" ? 15000 : 300000,
         refetchOnWindowFocus: true,
-        retry: 1,
+        retry: 2,
         staleTime: 10000,
     });
 }
