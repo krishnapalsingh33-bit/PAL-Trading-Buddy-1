@@ -11,6 +11,13 @@ function isDesktopApp() {
   return /Electron/i.test(navigator.userAgent);
 }
 
+function isNativeMobile() {
+  return typeof window !== "undefined" &&
+    (window.location.protocol === "capacitor:" ||
+      Boolean((window as Window & { Capacitor?: unknown }).Capacitor) ||
+      /Capacitor|Android/i.test(navigator.userAgent));
+}
+
 function Workspace() {
   const [page, setPage] = useState<Page>("dashboard");
   useEffect(() => {
@@ -43,11 +50,14 @@ function Workspace() {
 
 function Entry() {
   const desktop = isDesktopApp();
+  const nativeMobile = isNativeMobile();
+  const mobileLike = typeof window !== "undefined" && window.matchMedia("(max-width: 900px)").matches;
   const [showLogin, setShowLogin] = useState(
     () => window.sessionStorage.getItem("pal_enter_workspace") === "1",
   );
 
-  if (desktop) return <Workspace />;
+  // Desktop remains unchanged. Native Android and small-screen builds open PAL directly.
+  if (desktop || nativeMobile || mobileLike) return <Workspace />;
 
   if (!showLogin) {
     return (

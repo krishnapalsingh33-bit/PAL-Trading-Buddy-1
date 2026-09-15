@@ -1,0 +1,107 @@
+name: Build PAL Trading Buddy Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [mobile-app]
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm install --include=dev --no-audit --no-fund
+
+      - name: Set mobile backend URL
+        run: |
+          cat > frontend/.env.production <<'EOF'
+          VITE_PAL_API_URL=https://pal-trading-buddy-1.onrender.com
+          EOF
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          node ./node_modules/typescript/bin/tsc -b
+          node ./node_modules/vite/bin/vite.js build
+
+      - name: Verify mobile build configuration
+        run: |
+          test -f frontend/dist/index.html
+          grep -R "pal-trading-buddy-1.onrender.com" frontend/dist >/dev/null
+          ! grep -R "127.0.0.1:8000" frontend/dist >/dev/null
+          echo "Mobile build points to deployed Render backend."
+
+      - name: Smoke test deployed mobile API
+        run: |
+          python - <<'PY'
+          import json
+          import urllib.request
+          import urllib.error
+
+          base = "https://pal-trading-buddy-1.onrender.com"
+
+          def get_json(path, timeout=30):
+              request = urllib.request.Request(base + path, headers={"User-Agent": "PAL-Mobile-CI/1.0"})
+              try:
+                  with urllib.request.urlopen(request, timeout=timeout) as response:
+                      return response.status, json.loads(response.read().decode())
+              except urllib.error.HTTPError as exc:
+                  body = exc.read().decode(errors="replace")
+                  raise SystemExit(f"{path}: HTTP {exc.code}: {body[:500]}")
+
+          for path in ("/", "/health", "/mobile/health"):
+              status, body = get_json(path)
+              print(path, status, body)
+              if status != 200:
+                  raise SystemExit(f"{path}: HTTP {status}")
+
+          status, body = get_json("/mobile/analyze/GBPUSD", timeout=180)
+          print("/mobile/analyze/GBPUSD", status, list(body.keys()) if isinstance(body, dict) else type(body).__name__)
+          if status != 200 or not isinstance(body, dict) or body.get("success") is not True:
+              raise SystemExit("/mobile/analyze/GBPUSD did not return success=true")
+          if "report" not in body:
+              raise SystemExit("/mobile/analyze/GBPUSD did not return a report")
+          print("Mobile API smoke test passed.")
+          PY
+
+      - name: Prepare Capacitor toolchain
+        run: |
+          npm init -y
+          npm install --save-dev @capacitor/cli@latest @capacitor/core@latest @capacitor/android@latest typescript@latest --no-audit --no-fund
+          cat > capacitor.config.json <<'EOF'
+          {
+            "appId": "com.paltradingbuddy.app",
+            "appName": "PAL Trading Buddy",
+            "webDir": "frontend/dist"
+          }
+          EOF
+
+      - name: Add Android platform
+        run: node ./node_modules/@capacitor/cli/bin/capacitor add android
+
+      - name: Sync Android
+        run: node ./node_modules/@capacitor/cli/bin/capacitor sync android
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build APK
+        working-directory: android
+        run: ./gradlew assembleDebug
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PAL-Trading-Buddy-Android-FINAL
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error

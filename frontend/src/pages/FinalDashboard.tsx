@@ -45,16 +45,6 @@ function dateIST(value: unknown) {
   return date.toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", weekday: "short", day: "2-digit", month: "short", year: "numeric" });
 }
 
-function pct(value: unknown) {
-  const n = Number(value);
-  return Number.isFinite(n) ? `${n >= 0 ? "+" : ""}${n.toFixed(2)}%` : "—";
-}
-
-function price(value: unknown) {
-  const n = Number(value);
-  return Number.isFinite(n) ? n.toLocaleString(undefined, { maximumFractionDigits: 4 }) : "—";
-}
-
 function sourceUrl(item: any) {
   return item?.source_url || item?.url || SOURCES[item?.source] || SOURCES[item?.provider];
 }
@@ -80,12 +70,10 @@ export default function FinalDashboard({ onPageChange }: Props) {
     return () => window.clearInterval(id);
   }, []);
 
-  // All derived values are calculated before conditional returns so React hook order is stable.
   const report: any = data?.report ?? {};
   const macro: any = report.macro ?? {};
   const news: any = report.news ?? {};
   const macroBias: any = news.macro_bias ?? {};
-  const markets: any = report.markets ?? news.markets ?? {};
   const evidence: any = macroBias.evidence ?? {};
   const upcoming: any[] = Array.isArray(news.upcoming_events) ? news.upcoming_events : [];
   const recent: any[] = Array.isArray(news.recent_events) ? news.recent_events : [];
@@ -96,15 +84,15 @@ export default function FinalDashboard({ onPageChange }: Props) {
   const pairConfidence = Number(macro.gbpusd?.confidence ?? macroBias.gbpusd?.confidence ?? 0);
   const relationship = dxyBias === "BULLISH" && pairBias === "BEARISH" ? "USD FAVOURED" : dxyBias === "BEARISH" && pairBias === "BULLISH" ? "GBP FAVOURED" : "MIXED";
   const highImpact = upcoming.some((event) => String(event?.impact ?? "").toUpperCase().includes("HIGH"));
-  const weekend = [0, 6].includes(new Date(new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Kolkata", weekday: "long" }).format(now)).getDay());
+  const weekday = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Kolkata", weekday: "short" }).format(now);
+  const weekend = weekday === "Sun" || weekday === "Sat";
   const condition = weekend ? "MARKET CLOSED" : highImpact ? "EVENT-DRIVEN" : pairConfidence >= 60 ? "DIRECTIONAL" : "MIXED / WATCH";
-  const verdict = pairBias === "BULLISH" ? "GBP/USD upside bias" : pairBias === "BEARISH" ? "GBP/USD downside bias" : "No strong GBP/USD direction";
   const dxyReasons: string[] = Array.isArray(macro.dxy?.reasons) ? macro.dxy.reasons : Array.isArray(macroBias.dxy?.reasons) ? macroBias.dxy.reasons : [];
   const pairReasons: string[] = Array.isArray(macro.gbpusd?.reasons) ? macro.gbpusd.reasons : Array.isArray(macroBias.gbpusd?.reasons) ? macroBias.gbpusd.reasons : [];
   const sourceNames = Array.from(new Set([...(Array.isArray(news.calendar_sources) ? news.calendar_sources : []), ...(Array.isArray(evidence.sources) ? evidence.sources : [])]));
 
   if (isLoading) return <div className="min-h-screen bg-[#05080b] grid place-items-center text-zinc-400">Loading PAL Market Intelligence…</div>;
-  if (error) return <div className="min-h-screen bg-[#05080b] grid place-items-center text-center p-8"><div><div className="text-lg font-semibold text-red-300">PAL data feed unavailable</div><div className="mt-2 text-xs text-zinc-500">Keep the backend running on 127.0.0.1:8000 and refresh.</div></div></div>;
+  if (error) return <div className="min-h-screen bg-[#05080b] grid place-items-center text-center p-8"><div><div className="text-lg font-semibold text-red-300">PAL data feed unavailable</div><div className="mt-2 text-xs text-zinc-500">Unable to reach the deployed PAL data service. Check your internet connection and refresh.</div><button onClick={() => window.location.reload()} className="mt-5 rounded-xl border border-cyan-300/20 bg-cyan-300/[.06] px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-cyan-300">Retry</button></div></div>;
 
   return (
     <div className="min-h-screen bg-[#05080b] text-white">
@@ -115,7 +103,7 @@ export default function FinalDashboard({ onPageChange }: Props) {
           <div className="mx-auto max-w-[1380px] p-5 lg:p-7">
             <header className="rounded-[26px] border border-cyan-300/10 bg-[#081219] p-6">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-                <div><div className="text-[9px] font-black uppercase tracking-[.28em] text-cyan-300">PAL · MARKET INTELLIGENCE</div><h1 className="mt-2 text-3xl font-semibold tracking-tight">{condition === "MARKET CLOSED" ? "Market Dashboard" : `${new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", hour: "numeric", hour12: false }).format(now) >= "17" ? "New York" : "London"} Session Dashboard`}</h1><div className="mt-1 text-xs text-zinc-500">{dateIST(now)} · IST · Macro, news and economic catalysts</div></div>
+                <div><div className="text-[9px] font-black uppercase tracking-[.28em] text-cyan-300">PAL · MARKET INTELLIGENCE</div><h1 className="mt-2 text-3xl font-semibold tracking-tight">{condition === "MARKET CLOSED" ? "Market Dashboard" : `${now.getHours() >= 17 ? "New York" : "London"} Session Dashboard`}</h1><div className="mt-1 text-xs text-zinc-500">{dateIST(now)} · IST · Macro, news and economic catalysts</div></div>
                 <div className="rounded-xl border border-white/[.07] bg-black/20 px-4 py-3 text-right"><div className="font-mono text-lg">{now.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour12: false })}</div><div className="text-[8px] uppercase tracking-[.18em] text-zinc-700">LIVE IST</div></div>
               </div>
               <div className="mt-5 rounded-2xl border border-white/[.06] bg-black/20 p-4"><div className="text-[8px] font-bold uppercase tracking-[.2em] text-zinc-700">SESSION REGIME</div><div className="mt-2 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between"><div><h2 className="text-xl font-semibold">{macro.headline || "Current USD and GBP macro conditions are being monitored."}</h2><p className="mt-1 text-[10px] text-zinc-500">{macro.summary || "PAL is combining released data, fresh headlines and scheduled catalysts."}</p></div><span className="w-fit rounded-lg border border-amber-300/20 bg-amber-300/[.06] px-3 py-2 text-[9px] font-black text-amber-300">{condition}</span></div></div>
@@ -129,14 +117,9 @@ export default function FinalDashboard({ onPageChange }: Props) {
 
             {headlines.length > 0 && <section className="mt-4 rounded-2xl border border-white/[.07] bg-[#081116] overflow-hidden"><div className="border-b border-white/[.06] px-5 py-4"><div className="text-[8px] uppercase tracking-[.2em] text-cyan-300">NEWS INTELLIGENCE</div><h2 className="mt-1 text-lg font-semibold">What matters now</h2></div><div className="divide-y divide-white/[.05]">{headlines.slice(0, 6).map((item, index) => <div key={item.id ?? index} className="px-5 py-4"><div className="flex justify-between gap-4"><span className="text-[10px] leading-5 text-zinc-300">{item.title}</span><span className="shrink-0 text-[8px] text-zinc-700">{timeIST(item.published_at ?? item.published)}</span></div><div className="mt-2 flex justify-between"><span className="text-[8px] text-zinc-700">{item.source ?? item.provider ?? "News provider"}</span>{sourceUrl(item) && <a href={sourceUrl(item)} target="_blank" rel="noreferrer" className="text-[8px] text-cyan-300/70">Source ↗</a>}</div></div>)}</div></section>}
 
-            {recent.length > 0 && <section className="mt-4 rounded-2xl border border-white/[.07] bg-[#081116] p-5"><div className="text-[8px] uppercase tracking-[.2em] text-emerald-300/70">RELEASED DATA</div><h2 className="mt-1 text-lg font-semibold">Recent market catalysts</h2><div className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-3">{recent.slice(0, 6).map((event, index) => <div key={event.id ?? index} className="rounded-xl border border-white/[.05] bg-black/20 p-4"><div className="text-[8px] text-zinc-700">{timeIST(event.time)} · {event.currency ?? "—"}</div><div className="mt-2 text-[10px] font-semibold text-zinc-300">{event.title}</div>{(event.actual ?? event.forecast ?? event.previous) && <div className="mt-3 grid grid-cols-3 gap-2 text-[8px] text-zinc-600"><span>A <b className="text-zinc-300">{event.actual ?? "—"}</b></span><span>F <b className="text-zinc-300">{event.forecast ?? "—"}</b></span><span>P <b className="text-zinc-300">{event.previous ?? "—"}</b></span></div>}</div>)}</div></section>}
+            {recent.length > 0 && <section className="mt-4 rounded-2xl border border-white/[.07] bg-[#081116] p-5"><div className="text-[8px] uppercase tracking-[.2em] text-emerald-300/70">RELEASED DATA</div><h2 className="mt-1 text-lg font-semibold">Recent market catalysts</h2><div className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-3">{recent.slice(0, 6).map((event, index) => <div key={event.id ?? index} className="rounded-xl border border-white/[.05] bg-black/20 p-4"><div className="text-[8px] text-zinc-700">{timeIST(event.time)} · {event.currency ?? "—"}</div><div className="mt-2 text-[10px] font-semibold text-zinc-300">{event.title}</div></div>)}</div></section>}
 
-            <section className="mt-4 grid gap-4 lg:grid-cols-2"><div className="rounded-2xl border border-amber-300/10 bg-[#081116] p-5"><div className="text-[8px] uppercase tracking-[.2em] text-amber-300/70">BIAS INVALIDATION</div><div className="mt-3 text-[10px] leading-5 text-zinc-500">The current bias weakens when the key USD/GBP catalyst reverses, major data surprises in the opposite direction, or rate expectations materially change.</div></div><div className="rounded-2xl border border-white/[.07] bg-[#081116] p-5"><div className="text-[8px] uppercase tracking-[.2em] text-cyan-300">MARKET SNAPSHOT</div><div className="mt-4 grid grid-cols-2 gap-2">{([['DXY','DXY'],['GBP/USD','GBPUSD'],['US 10Y','US10Y'],['Gold','XAUUSD']] as const).map(([label,key]) => { const q = markets[key] ?? {}; return <div key={key} className="rounded-xl border border-white/[.05] bg-black/20 p-3"><div className="text-[9px] font-semibold text-zinc-300">{label}</div><div className="mt-2 font-mono text-sm">{price(q.price)}</div><div className="text-[9px] text-zinc-600">{pct(q.change_percent)}</div></div>; })}</div></div></section>
-
-            {sourceNames.length > 0 && <section className="mt-4 rounded-2xl border border-white/[.07] bg-[#081116] p-5"><div className="text-[8px] uppercase tracking-[.2em] text-cyan-300">SOURCE VERIFICATION</div><div className="mt-3 flex flex-wrap gap-2">{sourceNames.map((name: string) => <a key={name} href={SOURCES[name] || "https://news.google.com/"} target="_blank" rel="noreferrer" className="rounded-lg border border-white/[.05] bg-black/20 px-3 py-2 text-[8px] text-zinc-500">{name} ↗</a>)}</div></section>}
-
-            <section className="mt-4 rounded-[24px] border border-cyan-300/10 bg-[#081219] p-6"><div className="text-[8px] uppercase tracking-[.22em] text-cyan-300">FINAL MARKET VERDICT</div><h2 className="mt-2 text-2xl font-semibold">{verdict}</h2><div className="mt-2 text-xs text-zinc-500">DXY {dxyBias} · GBP/USD {pairBias} · {relationship}</div><div className="mt-3 text-[10px] leading-5 text-zinc-500">{pairReasons[0] || "The available evidence does not currently support a stronger directional conclusion."}</div></section>
-            <footer className="py-6 text-center text-[8px] uppercase tracking-[.18em] text-zinc-800">PAL · source-attributed market intelligence</footer>
+            {sourceNames.length > 0 && <div className="mt-5 text-center text-[8px] uppercase tracking-[.2em] text-zinc-800">Sources: {sourceNames.join(" · ")}</div>}
           </div>
         </main>
       </div>

@@ -1,9 +1,8 @@
 import axios from "axios";
-
-const baseURL = import.meta.env.VITE_PAL_API_URL || "http://127.0.0.1:8000";
+import { getApiBaseURL } from "./runtime";
 
 const api = axios.create({
-    baseURL,
+    baseURL: getApiBaseURL(),
     timeout: 120000,
     headers: {
         Accept: "application/json",
