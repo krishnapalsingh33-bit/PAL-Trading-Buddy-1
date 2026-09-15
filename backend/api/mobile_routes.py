@@ -14,23 +14,27 @@ def mobile_health():
         "success": True,
         "status": "healthy",
         "service": "PAL Trading Buddy Mobile API",
-        "version": "1.1.0",
+        "version": "1.2.0",
     }
 
 
 @router.get("/analyze/{symbol}")
 def mobile_analyze(symbol: str):
-    """Mobile-compatible PAL analysis endpoint.
-
-    Reuses the existing PAL analysis pipeline, including live market
-    observation, macro/news intelligence and structured fallback behavior.
-    """
     symbol = symbol.upper()
     current_time = datetime.now(timezone.utc)
-    report = service.analyze(symbol=symbol, news_events=[], current_time=current_time)
-    return {
-        "success": True,
-        "symbol": symbol,
-        "timestamp": current_time.isoformat(),
-        "report": report,
-    }
+    try:
+        report = service.analyze(symbol=symbol, news_events=[], current_time=current_time)
+        return {
+            "success": True,
+            "symbol": symbol,
+            "timestamp": current_time.isoformat(),
+            "report": report,
+        }
+    except Exception as exc:
+        return {
+            "success": False,
+            "symbol": symbol,
+            "timestamp": current_time.isoformat(),
+            "error": "PAL analysis is temporarily unavailable.",
+            "detail": str(exc),
+        }
