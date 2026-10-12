@@ -103,10 +103,10 @@ export default function FinalDashboard({ activePage, onPageChange }: Props) {
   const upcoming: any[] = Array.isArray(news.upcoming_events) ? news.upcoming_events : [];
   const recent: any[] = Array.isArray(news.recent_events) ? news.recent_events : [];
   const headlines: any[] = Array.isArray(news.headlines) ? news.headlines : [];
-  const dxyBias = getBias(macro.dxy?.bias ?? macroBias.dxy?.bias);
-  const pairBias = getBias(macro.gbpusd?.bias ?? macroBias.gbpusd?.bias);
-  const dxyConfidence = Number(macro.dxy?.confidence ?? macroBias.dxy?.confidence ?? 0);
-  const pairConfidence = Number(macro.gbpusd?.confidence ?? macroBias.gbpusd?.confidence ?? 0);
+  const dxyBias = getBias(todayBias.today?.dxy?.bias ?? macro.dxy?.bias ?? macroBias.dxy?.bias);
+  const pairBias = getBias(todayBias.today?.gbpusd?.bias ?? macro.gbpusd?.bias ?? macroBias.gbpusd?.bias);
+  const dxyConfidence = Number(todayBias.today?.dxy?.confidence ?? macro.dxy?.confidence ?? macroBias.dxy?.confidence ?? 0);
+  const pairConfidence = Number(todayBias.today?.gbpusd?.confidence ?? todayBias.today?.confidence ?? macro.gbpusd?.confidence ?? macroBias.gbpusd?.confidence ?? 0);
   const goldAssetBias: any = todayBias.assets?.gold ?? {};
   const btcAssetBias: any = todayBias.assets?.btcusd ?? {};
   const relationship = dxyBias === "BULLISH" && pairBias === "BEARISH" ? "USD FAVOURED" : dxyBias === "BEARISH" && pairBias === "BULLISH" ? "GBP FAVOURED" : "MIXED";
@@ -115,8 +115,8 @@ export default function FinalDashboard({ activePage, onPageChange }: Props) {
   const weekend = weekdayIST === "Sat" || weekdayIST === "Sun";
   const condition = weekend ? "MARKET CLOSED" : highImpact ? "EVENT-DRIVEN" : pairConfidence >= 60 ? "DIRECTIONAL" : "MIXED / WATCH";
   const verdict = pairBias === "BULLISH" ? "GBP/USD upside bias" : pairBias === "BEARISH" ? "GBP/USD downside bias" : "No strong GBP/USD direction";
-  const dxyReasons: string[] = Array.isArray(macro.dxy?.reasons) ? macro.dxy.reasons : Array.isArray(macroBias.dxy?.reasons) ? macroBias.dxy.reasons : [];
-  const pairReasons: string[] = Array.isArray(macro.gbpusd?.reasons) ? macro.gbpusd.reasons : Array.isArray(macroBias.gbpusd?.reasons) ? macroBias.gbpusd.reasons : [];
+  const dxyReasons: string[] = Array.isArray(todayBias.today?.dxy?.reasons) ? todayBias.today.dxy.reasons : Array.isArray(macro.dxy?.reasons) ? macro.dxy.reasons : Array.isArray(macroBias.dxy?.reasons) ? macroBias.dxy.reasons : [];
+  const pairReasons: string[] = Array.isArray(todayBias.today?.gbpusd?.reasons) ? todayBias.today.gbpusd.reasons : Array.isArray(macro.gbpusd?.reasons) ? macro.gbpusd.reasons : Array.isArray(macroBias.gbpusd?.reasons) ? macroBias.gbpusd.reasons : [];
   const sourceNames = Array.from(new Set([...(Array.isArray(news.calendar_sources) ? news.calendar_sources : []), ...(Array.isArray(evidence.sources) ? evidence.sources : [])]));
 
   if (isLoading) return <div className="min-h-screen bg-[#05080b] grid place-items-center text-zinc-400">Loading PAL Market Intelligence…</div>;
