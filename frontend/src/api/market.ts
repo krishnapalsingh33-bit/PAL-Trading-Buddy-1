@@ -2,14 +2,17 @@ import axios from "axios";
 import { isDesktopPAL, palApiBaseURL } from "./pal";
 
 const configuredMarketURL = String(import.meta.env.VITE_PAL_MARKET_API_URL || "").trim();
-const marketURL = configuredMarketURL.replace(/\/+$/, "") ||
-  (isDesktopPAL ? palApiBaseURL : "https://pal-market-data-api.onrender.com");
 
 /**
- * Quotes have a dedicated read-only API origin so browser quote fetches do not
- * depend on the separate PAL analysis service. Desktop continues using its
- * bundled local backend.
+ * Use the existing PAL backend by default. Only point to the dedicated
+ * quote-only service after that service has actually been deployed and its
+ * health endpoint verified. This avoids shipping a guaranteed-dead hostname.
+ * Desktop always uses its bundled local API unless explicitly overridden.
  */
+const marketURL =
+  configuredMarketURL.replace(/\/+$/, "") ||
+  palApiBaseURL;
+
 const marketApi = axios.create({
   baseURL: marketURL,
   timeout: 15_000,
