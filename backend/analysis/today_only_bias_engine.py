@@ -106,8 +106,8 @@ class TodayOnlyBiasEngine:
             try:
                 d=value if isinstance(value, datetime) else datetime.fromisoformat(str(value).replace("Z", "+00:00"))
                 if d.tzinfo is None: d=d.replace(tzinfo=timezone.utc)
-                market_now = now.astimezone(ZoneInfo(cls.MARKET_DAY_ZONE))
-                market_event = d.astimezone(ZoneInfo(cls.MARKET_DAY_ZONE))
+                market_now = now.astimezone(ZoneInfo("Asia/Kolkata"))
+                market_event = d.astimezone(ZoneInfo("Asia/Kolkata"))
                 return market_event.date() == market_now.date()
             except (TypeError,ValueError): pass
         return False
