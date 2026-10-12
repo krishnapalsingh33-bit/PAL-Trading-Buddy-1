@@ -53,8 +53,10 @@ class ForexFactoryProvider:
                 except (TypeError, ValueError):
                     continue
 
-                if event_time.tzinfo is not None:
-                    event_time = event_time.astimezone(timezone.utc).replace(tzinfo=None)
+                if event_time.tzinfo is None:
+                    event_time = event_time.replace(tzinfo=timezone.utc)
+                else:
+                    event_time = event_time.astimezone(timezone.utc)
 
                 events.append({
                     "id": f"ForexFactory:{currency}:{title}:{event_time.isoformat()}",
