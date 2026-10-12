@@ -184,6 +184,8 @@ class NewsEngine:
                     event_time.isoformat()
                 ),
 
+                "time_confidence": event.get("time_confidence", "source_scheduled"),
+
                 "impact": impact,
 
                 "category": event.get(
