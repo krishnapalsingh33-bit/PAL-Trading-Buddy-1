@@ -5,9 +5,11 @@ from datetime import datetime, timezone
 from threading import Lock
 from time import monotonic
 from typing import Any
+from pathlib import Path
 
 import requests
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(
@@ -176,13 +178,33 @@ def fetch_one(key: str) -> dict[str, Any]:
     return unavailable(key, f"Quote provider failed for {provider_symbol}. {last_error}")
 
 
-@app.get("/")
-def root() -> dict[str, str]:
-    return {
-        "name": "PAL Read-only Market Data API",
-        "status": "running",
-        "scope": "public market quotes only",
-    }
+PAL_ANALYSIS_API_BASE = "https://pal-trading-buddy-1.onrender.com"
+PAL_ANALYSIS_TIMEOUT = (3.0, 65.0)
+
+def _proxy_pal_json(path: str, timeout: tuple[float, float] = (3.0, 15.0)) -> dict[str, Any]:
+    """Call the original PAL service server-to-server to avoid browser CORS failures."""
+    try:
+        response = requests.get(
+            PAL_ANALYSIS_API_BASE + path,
+            headers={"Accept": "application/json", "User-Agent": "PAL-Market-Dashboard/1.0"},
+            timeout=timeout,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise RuntimeError("PAL service returned a non-object JSON response.")
+        return payload
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"PAL upstream request failed for {path}: {type(exc).__name__}: {str(exc)[:180]}",
+        ) from exc
+
+@app.get("/", include_in_schema=False)
+@app.get("/dashboard", include_in_schema=False)
+def root() -> FileResponse:
+    """Serve the live dashboard from the same origin as its quote APIs."""
+    return FileResponse(Path(__file__).with_name("dashboard.html"), media_type="text/html")
 
 
 @app.get("/health")
@@ -203,6 +225,32 @@ def provider_status() -> dict[str, Any]:
         "scope": "quotes only; no journal or account endpoints",
     }
 
+
+@app.get("/pal/analysis-status")
+def analysis_status() -> dict[str, Any]:
+    """Check the original PAL analysis service separately from the quote feed."""
+    health_payload = _proxy_pal_json("/health", timeout=(2.0, 6.0))
+    provider_payload = _proxy_pal_json("/pal/provider-status", timeout=(2.0, 8.0))
+    return {
+        "success": True,
+        "reachable": str(health_payload.get("status", "")).lower() == "healthy",
+        "checked_at": utc_now().isoformat(),
+        "backend_health": health_payload,
+        "provider_status": provider_payload,
+    }
+
+@app.get("/pal/analysis/{symbol}")
+def proxy_analysis(symbol: str) -> dict[str, Any]:
+    """Proxy selected PAL analysis symbols server-side; never accept arbitrary URLs."""
+    normalized = symbol.upper()
+    if normalized not in {"GBPUSD", "DXY", "XAUUSD", "BTCUSD"}:
+        raise HTTPException(status_code=400, detail="Unsupported analysis symbol.")
+    return _proxy_pal_json("/pal/analyze/" + normalized, timeout=PAL_ANALYSIS_TIMEOUT)
+
+@app.get("/pal/news")
+def proxy_news() -> dict[str, Any]:
+    """Proxy the PAL news endpoint to keep browser calls same-origin."""
+    return _proxy_pal_json("/v2/news", timeout=(3.0, 25.0))
 
 @app.get("/pal/markets")
 def market_snapshot() -> dict[str, Any]:
