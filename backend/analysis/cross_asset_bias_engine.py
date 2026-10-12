@@ -67,7 +67,7 @@ class CrossAssetBiasEngine:
             bias = "NEUTRAL"
         directional_strength = min(1.0, abs(score))
         coverage = min(1.0, len(components) / 3.0)
-        confidence = round(min(90, 35 + directional_strength * 40 + coverage * 15))
+        confidence = round(min(90, 25 + directional_strength * 40 + coverage * 25))
         return {
             "bias": bias, "confidence": confidence, "score": round(score, 3),
             "reasons": reasons[:4], "evidence_count": len(components),
