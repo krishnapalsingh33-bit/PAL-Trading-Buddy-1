@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: pal-market-data-api
+    runtime: python
+    plan: free
+    region: singapore
+    branch: online-market-data
+    rootDir: market-api
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeployTrigger: commit
