@@ -10,7 +10,7 @@ from api.mt5_routes import router as mt5_router
 
 app = FastAPI(title="PAL Trading Buddy API", version="2.0.0", description="PAL Trading Buddy Backend")
 
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=False, allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"], allow_headers=["*"])
 
 app.include_router(router)
 app.include_router(journal_router)
