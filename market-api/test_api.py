@@ -72,7 +72,7 @@ class MarketApiTests(unittest.TestCase):
 
     def test_root_serves_dashboard_file(self) -> None:
         response = main.root()
-        self.assertTrue(response.path.endswith("dashboard.html"))
+        self.assertTrue(str(response.path).endswith("dashboard.html"))
 
     def test_analysis_proxy_rejects_unapproved_symbol(self) -> None:
         from fastapi import HTTPException
