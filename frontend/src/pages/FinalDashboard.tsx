@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import Sidebar, { type Page } from "../components/layout/Sidebar";
 import MarketCharts from "../components/market/MarketCharts";
 import { usePAL } from "../hooks/usePAL";
+import { isDesktopPAL, palApiBaseURL } from "../api/pal";
 import { useMarkets } from "../hooks/useMarkets";
 
 type Props = { activePage: Page; onPageChange: (page: Page) => void };
@@ -83,7 +84,7 @@ function BiasCard({ title, bias, confidence, reasons }: { title: string; bias: B
 
 export default function FinalDashboard({ activePage, onPageChange }: Props) {
   const { data, isLoading, error } = usePAL();
-  const { data: marketFeed } = useMarkets();
+  const { data: marketFeed, isError: marketFeedError, isFetching: marketFeedFetching } = useMarkets();
   const [now, setNow] = useState(() => new Date());
   const [rightNowOpen, setRightNowOpen] = useState(false);
 
@@ -110,6 +111,9 @@ export default function FinalDashboard({ activePage, onPageChange }: Props) {
     ])),
   };
   const quoteCount = ["DXY", "XAUUSD", "BTCUSD", "GBPUSD"].filter((key) => { const quote = markets[key]; return quote?.price != null && ["CURRENT", "RECENT"].includes(String(quote.status ?? "").toUpperCase()); }).length;
+  const liveQuoteCount = ["DXY", "XAUUSD", "BTCUSD", "GBPUSD"].filter((key) => { const quote = liveMarkets[key]; return quote?.price != null && ["CURRENT", "RECENT"].includes(String(quote.status ?? "").toUpperCase()); }).length;
+  const apiStatus = marketFeedError ? "API OFFLINE" : !marketFeed ? "CONNECTING" : marketFeed.status === "CONNECTED" ? "CONNECTED" : marketFeed.status === "CONNECTED_WITH_RECENT_QUOTES" ? "RECENT DATA" : marketFeed.status === "PARTIAL" ? "PARTIAL FEEDS" : "PROVIDER ISSUE";
+  const providerStatusText = marketFeed?.provider?.name ? String(marketFeed.provider.name) + " · " + String(marketFeed.provider.status) : marketFeedError ? "Could not reach quote endpoint" : marketFeedFetching ? "Checking provider…" : "Waiting for quote endpoint";
   const evidence: any = macroBias.evidence ?? {};
   const upcoming: any[] = Array.isArray(news.upcoming_events) ? news.upcoming_events : [];
   const recent: any[] = Array.isArray(news.recent_events) ? news.recent_events : [];
@@ -131,7 +135,7 @@ export default function FinalDashboard({ activePage, onPageChange }: Props) {
   const sourceNames = Array.from(new Set([...(Array.isArray(news.calendar_sources) ? news.calendar_sources : []), ...(Array.isArray(evidence.sources) ? evidence.sources : [])]));
 
   if (isLoading) return <div className="min-h-screen bg-[#05080b] grid place-items-center text-zinc-400">Loading PAL Market Intelligence…</div>;
-  if (error) return <div className="min-h-screen bg-[#05080b] grid place-items-center text-center p-8"><div><div className="text-lg font-semibold text-red-300">PAL data feed unavailable</div><div className="mt-2 text-xs text-zinc-500">Keep the backend running on 127.0.0.1:8000 and refresh.</div></div></div>;
+  if (error) return <div className="min-h-screen bg-[#05080b] grid place-items-center text-center p-8"><div><div className="text-lg font-semibold text-red-300">PAL data feed unavailable</div><div className="mt-2 text-xs text-zinc-500">API target: {palApiBaseURL}. {isDesktopPAL ? "The bundled desktop API must be running." : "Check the configured hosted API URL."}</div></div></div>;
 
   return (
     <div className="pal-dashboard min-h-screen text-white">
@@ -161,9 +165,10 @@ export default function FinalDashboard({ activePage, onPageChange }: Props) {
                 </article>;
               })}
               <article className="relative overflow-hidden rounded-xl border border-emerald-300/15 bg-[#06120f] p-3 shadow-[0_0_24px_rgba(16,240,180,.025)]">
-                <div className="flex items-center justify-between gap-2"><span className="text-[10px] font-extrabold tracking-wider">DATA FEED</span><span className={quoteCount === 4 ? "text-[8px] font-bold text-emerald-200" : "text-[8px] font-bold text-amber-200"}>● {quoteCount === 4 ? "CONNECTED" : "PARTIAL"}</span></div>
-                <div className="mt-3 text-sm font-semibold">{quoteCount}/4 quotes usable</div>
-                <div className="mt-1 text-[8px] text-zinc-600">Live or recent provider data</div>
+                <div className="flex items-center justify-between gap-2"><span className="text-[10px] font-extrabold tracking-wider">DATA FEED</span><span className={apiStatus === "CONNECTED" || apiStatus === "RECENT DATA" ? "text-[8px] font-bold text-emerald-200" : apiStatus === "PARTIAL FEEDS" ? "text-[8px] font-bold text-amber-200" : "text-[8px] font-bold text-rose-300"}>● {apiStatus}</span></div>
+                <div className="mt-3 text-sm font-semibold">{liveQuoteCount}/4 usable quotes</div>
+                <div className="mt-1 truncate text-[8px] text-zinc-500">{providerStatusText}</div>
+                <div className="mt-1 text-[8px] text-zinc-700">{marketFeed?.provider ? String(marketFeed.provider.fresh_quotes ?? 0) + " fresh · " + String(marketFeed.provider.usable_quotes ?? 0) + " usable" : "API target · " + palApiBaseURL}</div>
               </article>
             </section>
 
