@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import Sidebar, { type Page } from "../components/layout/Sidebar";
 import MarketCharts from "../components/market/MarketCharts";
 import { usePAL } from "../hooks/usePAL";
+import { useMarkets } from "../hooks/useMarkets";
 
 type Props = { activePage: Page; onPageChange: (page: Page) => void };
 type Bias = "BULLISH" | "BEARISH" | "NEUTRAL" | "UNKNOWN";
@@ -82,6 +83,7 @@ function BiasCard({ title, bias, confidence, reasons }: { title: string; bias: B
 
 export default function FinalDashboard({ activePage, onPageChange }: Props) {
   const { data, isLoading, error } = usePAL();
+  const { data: marketFeed } = useMarkets();
   const [now, setNow] = useState(() => new Date());
   const [rightNowOpen, setRightNowOpen] = useState(false);
 
@@ -98,7 +100,15 @@ export default function FinalDashboard({ activePage, onPageChange }: Props) {
   const todayBias: any = news.today_bias ?? {};
   const rightNow: any = todayBias.today?.right_now ?? {};
   const activeSession = todayBias.active_session ?? "No major session active";
-  const markets: any = report.markets ?? news.markets ?? {};
+  const analysisMarkets: any = report.markets ?? news.markets ?? {};
+  const liveMarkets: any = marketFeed?.markets ?? {};
+  const markets: any = {
+    ...analysisMarkets,
+    ...Object.fromEntries(["DXY", "XAUUSD", "BTCUSD", "GBPUSD"].map((key) => [
+      key,
+      { ...(analysisMarkets[key] ?? {}), ...(liveMarkets[key] ?? {}) },
+    ])),
+  };
   const quoteCount = ["DXY", "XAUUSD", "BTCUSD", "GBPUSD"].filter((key) => { const quote = markets[key]; return quote?.price != null && ["CURRENT", "RECENT"].includes(String(quote.status ?? "").toUpperCase()); }).length;
   const evidence: any = macroBias.evidence ?? {};
   const upcoming: any[] = Array.isArray(news.upcoming_events) ? news.upcoming_events : [];
