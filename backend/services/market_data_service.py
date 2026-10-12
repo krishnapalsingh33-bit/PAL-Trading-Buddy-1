@@ -21,7 +21,9 @@ class MarketDataService:
         self._lock = Lock()
 
     @staticmethod
-    def _intraday_market_closed() -> bool:
+    def _intraday_market_closed(symbol: str | None = None) -> bool:
+        if str(symbol or "").upper() in {"BTC", "BTCUSD", "BTC-USD"}:
+            return False
         now = datetime.now(timezone.utc)
         # Main FX/DXY spot market is closed from Friday 21:00 UTC through Sunday 21:00 UTC.
         if now.weekday() == 5:
@@ -55,7 +57,7 @@ class MarketDataService:
             points = list(points or [])
             if momentum is not None:
                 status = "CURRENT"
-            elif self._intraday_market_closed():
+            elif self._intraday_market_closed(symbol):
                 status = "MARKET_CLOSED"
             else:
                 status = "WARMING_UP"
@@ -76,7 +78,7 @@ class MarketDataService:
             if previous:
                 return previous
             return {
-                "status": "MARKET_CLOSED" if self._intraday_market_closed() else "WARMING_UP",
+                "status": "MARKET_CLOSED" if self._intraday_market_closed(symbol) else "WARMING_UP",
                 "momentum_percent": None,
                 "price": None,
                 "points": [],
