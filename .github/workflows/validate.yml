@@ -25,6 +25,9 @@ jobs:
           analysis/news_engine.py
           analysis/macro_bias_engine.py
           analysis/report_engine.py
+          analysis/today_only_bias_engine.py
+          analysis/cross_asset_bias_engine.py
+          analysis/evidence_bias_engine.py
           providers/*.py
           services/*.py
           models/*.py
