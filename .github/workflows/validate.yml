@@ -44,10 +44,13 @@ jobs:
           node-version: 22
       - name: Install frontend dependencies
         working-directory: frontend
-        run: npm install --include=dev
+        run: npm install --include=dev --no-package-lock --force
+      - name: Install frontend build tools explicitly
+        working-directory: frontend
+        run: npm install --no-save --include=dev --no-package-lock typescript@6.0.3 vite@8.2.0 @vitejs/plugin-react@6.0.5
       - name: TypeScript check
         working-directory: frontend
-        run: npm exec -- tsc -b
+        run: ./node_modules/.bin/tsc -b
       - name: Production build
         working-directory: frontend
-        run: npm run build
+        run: ./node_modules/.bin/vite build
