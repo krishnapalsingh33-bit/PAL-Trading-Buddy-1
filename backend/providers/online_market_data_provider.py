@@ -230,24 +230,41 @@ class YahooMarketDataProvider(MarketDataProvider):
     def get_quote(self, symbol: str) -> MarketQuote:
         normalized = symbol.upper()
         yahoo_symbol = self.yahoo_symbol(normalized)
-        try:
-            if yahoo_symbol:
-                try:
-                    return self._quote_from_chart(normalized, yahoo_symbol)
-                except Exception as exc:
-                    logger.warning("Yahoo chart failed for %s: %s", normalized, exc)
-                try:
-                    return self._request_quote_page_quote(normalized, yahoo_symbol)
-                except Exception as exc:
-                    logger.warning("Yahoo page fallback failed for %s: %s", normalized, exc)
-            if normalized in self.CBOE_SYMBOLS:
-                try:
-                    return self._quote_from_cboe(normalized)
-                except Exception as exc:
-                    logger.warning("CBOE fallback failed for %s: %s", normalized, exc)
-            return MarketQuote(symbol=normalized, source=self.SOURCE, status="UNAVAILABLE", reason="Online market data is temporarily unavailable.")
-        except Exception:
-            return MarketQuote(symbol=normalized, source=self.SOURCE, status="UNAVAILABLE", reason="Online market data is temporarily unavailable.")
+        failures: list[str] = []
+
+        if yahoo_symbol:
+            try:
+                return self._quote_from_chart(normalized, yahoo_symbol)
+            except Exception as exc:
+                logger.warning("Yahoo chart failed for %s: %s", normalized, exc)
+                failures.append(f"Yahoo chart: {type(exc).__name__}")
+
+            try:
+                return self._request_quote_page_quote(normalized, yahoo_symbol)
+            except Exception as exc:
+                logger.warning("Yahoo page fallback failed for %s: %s", normalized, exc)
+                failures.append(f"Yahoo quote page: {type(exc).__name__}")
+
+        if normalized in self.CBOE_SYMBOLS:
+            try:
+                return self._quote_from_cboe(normalized)
+            except Exception as exc:
+                logger.warning("CBOE fallback failed for %s: %s", normalized, exc)
+                failures.append(f"CBOE: {type(exc).__name__}")
+
+        if yahoo_symbol is None and normalized not in self.CBOE_SYMBOLS:
+            reason = f"No online provider symbol mapping exists for {normalized}."
+        elif failures:
+            reason = "All quote providers failed (" + ", ".join(failures) + "). Check backend network access and provider availability."
+        else:
+            reason = "No quote was returned by the configured provider."
+
+        return MarketQuote(
+            symbol=normalized,
+            source=self.SOURCE,
+            status="UNAVAILABLE",
+            reason=reason,
+        )
 
     def _request_quote_page_quote(self, normalized: str, yahoo_symbol: str) -> MarketQuote:
         row = self._request_quote_page(yahoo_symbol)
