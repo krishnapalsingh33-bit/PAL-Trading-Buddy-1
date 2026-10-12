@@ -124,7 +124,7 @@ export default function FinalDashboard({ activePage, onPageChange }: Props) {
   if (error) return <div className="min-h-screen bg-[#05080b] grid place-items-center text-center p-8"><div><div className="text-lg font-semibold text-red-300">PAL data feed unavailable</div><div className="mt-2 text-xs text-zinc-500">Keep the backend running on 127.0.0.1:8000 and refresh.</div></div></div>;
 
   return (
-    <div className="min-h-screen bg-[#05080b] text-white">
+    <div className="pal-dashboard min-h-screen text-white">
       <div className="flex min-h-screen">
         <Sidebar symbol="GBPUSD" activePage={activePage} onPageChange={onPageChange} />
         <main className="min-w-0 flex-1 overflow-y-auto">
