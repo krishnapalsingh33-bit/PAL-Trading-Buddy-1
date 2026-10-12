@@ -11,7 +11,7 @@ from providers.provider_factory import ProviderFactory
 class MarketDataService:
     """Cached online market snapshots plus provider-backed intraday momentum."""
 
-    SYMBOLS = ("DXY", "GBPUSD", "XAUUSD", "USOIL", "US10Y", "US500")
+    SYMBOLS = ("DXY", "GBPUSD", "XAUUSD", "BTCUSD", "USOIL", "US10Y", "US500")
 
     def __init__(self, ttl_seconds: int = 15) -> None:
         self.provider = ProviderFactory.get_provider()
@@ -112,7 +112,7 @@ class MarketDataService:
         for symbol in self.SYMBOLS:
             quote = self.get_market_data(symbol, force_refresh=force_refresh)
             data = quote.to_dict()
-            if symbol in {"DXY", "GBPUSD"}:
+            if symbol in {"DXY", "GBPUSD", "BTCUSD"}:
                 right_now = self._get_right_now(symbol)
             else:
                 right_now = {"status": "NOT_TRACKED", "momentum_percent": None, "price": quote.price, "points": []}
