@@ -64,6 +64,7 @@ class ForexFactoryProvider:
                     "currency": currency,
                     "impact": impact,
                     "time": event_time,
+                    "time_confidence": "source_scheduled",
                     "actual": item.get("actual"),
                     "forecast": item.get("forecast"),
                     "previous": item.get("previous"),
