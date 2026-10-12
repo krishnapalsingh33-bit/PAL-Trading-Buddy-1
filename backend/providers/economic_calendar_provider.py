@@ -101,6 +101,7 @@ class EconomicCalendarProvider:
             "title": title,
             "currency": currency,
             "time": event_time,
+            "time_confidence": "source_scheduled",
             "impact": cls._normalize_impact(item, title),
             "category": str(category),
             "actual": actual,
