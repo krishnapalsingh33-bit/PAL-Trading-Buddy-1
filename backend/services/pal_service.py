@@ -4,6 +4,7 @@ from analysis.news_engine import NewsEngine
 from analysis.evidence_bias_engine import EvidenceBiasEngine
 from analysis.macro_bias_engine import MacroBiasEngine
 from analysis.today_only_bias_engine import TodayOnlyBiasEngine
+from analysis.cross_asset_bias_engine import CrossAssetBiasEngine
 from analysis.report_engine import ReportEngine
 from providers.google_news_provider import GoogleNewsProvider
 from providers.macro_news_provider import MacroNewsProvider
@@ -177,6 +178,7 @@ class PALService:
             }
 
         today_bias["today"]["right_now"] = self._build_right_now(markets)
+        today_bias["assets"] = CrossAssetBiasEngine.analyze(markets)
 
         news["macro_bias"] = macro_bias
         news["today_bias"] = today_bias
