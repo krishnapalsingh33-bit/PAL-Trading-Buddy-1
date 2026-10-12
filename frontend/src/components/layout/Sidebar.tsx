@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import Badge from "../ui/Badge";
 
-export type Page = "dashboard";
+export type Page = "dashboard" | "macro" | "calendar";
 type Brightness = "low" | "medium" | "high";
 type Props = { symbol: string; activePage?: Page; onPageChange?(page: Page): void };
 
@@ -27,11 +27,18 @@ export default function Sidebar({ symbol, activePage = "dashboard", onPageChange
         </div>
       </div>
 
-      <nav className="flex-1 px-4 py-5">
-        <button type="button" onClick={() => onPageChange?.("dashboard")} className={`flex w-full items-center gap-3 rounded-xl border px-3 py-3 text-left transition ${activePage === "dashboard" ? "border-cyan-300/35 bg-emerald-300/[.10] text-white shadow-[0_0_24px_rgba(32,217,255,.08)]" : "border-transparent text-zinc-400 hover:bg-white/[.025] hover:text-white"}`}>
-          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-cyan-300/[.10] text-cyan-300">⌂</span>
-          <span className="text-[14px] font-medium">Dashboard</span><span className="ml-auto text-cyan-300">›</span>
-        </button>
+      <nav className="flex-1 px-4 py-5 space-y-2">
+        {([
+          ["dashboard", "Dashboard", "⌂"],
+          ["macro", "Macro Desk", "⌁"],
+          ["calendar", "Calendar", "▦"],
+        ] as const).map(([page, label, glyph]) => (
+          <button key={page} type="button" onClick={() => onPageChange?.(page)} className={`flex w-full items-center gap-3 rounded-xl border px-3 py-3 text-left transition ${activePage === page ? "border-cyan-300/35 bg-emerald-300/[.10] text-white shadow-[0_0_24px_rgba(32,217,255,.08)]" : "border-transparent text-zinc-400 hover:bg-white/[.025] hover:text-white"}`}>
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-cyan-300/[.10] text-cyan-300">{glyph}</span>
+            <span className="text-[14px] font-medium">{label}</span>
+            {activePage === page && <span className="ml-auto text-cyan-300">›</span>}
+          </button>
+        ))}
       </nav>
 
       <div className="border-t border-white/[.06] px-5 py-4">
