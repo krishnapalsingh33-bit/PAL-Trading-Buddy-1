@@ -4,14 +4,12 @@ import { isDesktopPAL, palApiBaseURL } from "./pal";
 const configuredMarketURL = String(import.meta.env.VITE_PAL_MARKET_API_URL || "").trim();
 
 /**
- * Use the existing PAL backend by default. Only point to the dedicated
- * quote-only service after that service has actually been deployed and its
- * health endpoint verified. This avoids shipping a guaranteed-dead hostname.
- * Desktop always uses its bundled local API unless explicitly overridden.
+ * Dedicated read-only quote service. This host has now been created on Render.
+ * Desktop still uses its bundled local PAL service unless explicitly overridden.
  */
 const marketURL =
   configuredMarketURL.replace(/\/+$/, "") ||
-  palApiBaseURL;
+  (isDesktopPAL ? palApiBaseURL : "https://pal-market-data-api.onrender.com");
 
 const marketApi = axios.create({
   baseURL: marketURL,
