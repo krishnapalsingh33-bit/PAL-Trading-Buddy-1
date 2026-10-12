@@ -1,9 +1,7 @@
 name: Wire premium macro view
 
 on:
-  push:
-    branches: [online-market-data]
-
+  workflow_dispatch:
 permissions:
   contents: write
 
