@@ -9,6 +9,7 @@ class TodayOnlyBiasEngine:
     """Compact TODAY-only fundamental bias built from released data + fresh macro news."""
 
     ZONES = {"Asia": "Asia/Tokyo", "London": "Europe/London", "New York": "America/New_York"}
+    MARKET_DAY_ZONE = "Asia/Kolkata"
     GBP_POS = ("hawkish boe", "boe rate hike", "boe hikes", "boe tightening", "uk inflation rises", "uk inflation rose", "uk inflation accelerates", "uk inflation accelerated", "uk inflation remains elevated", "hot uk inflation", "strong uk growth", "uk growth accelerates", "strong uk economy", "uk employment strengthens", "uk wages accelerate", "wage growth accelerates", "strong retail sales")
     GBP_NEG = ("dovish boe", "boe rate cut", "boe cuts", "boe easing", "uk inflation falls", "uk inflation fell", "uk inflation drops", "uk inflation dropped", "cooling uk inflation", "soft uk inflation", "weak uk growth", "uk growth slows", "uk recession", "uk employment weakens", "uk wages slow", "wage growth slows", "unemployment rises", "weak retail sales")
     USD_POS = ("hawkish fed", "hawkish federal reserve", "fed rate hike", "fed hikes", "higher for longer", "fed tightening", "rate hike bets rise", "strong us inflation", "hot us inflation", "us inflation rises", "us inflation rose", "sticky us inflation", "strong us jobs", "strong us payrolls", "strong employment", "falling unemployment", "strong retail sales", "strong us growth", "us growth accelerates")
@@ -105,7 +106,9 @@ class TodayOnlyBiasEngine:
             try:
                 d=value if isinstance(value, datetime) else datetime.fromisoformat(str(value).replace("Z", "+00:00"))
                 if d.tzinfo is None: d=d.replace(tzinfo=timezone.utc)
-                return d.astimezone(timezone.utc).date() == now.date()
+                market_now = now.astimezone(ZoneInfo(cls.MARKET_DAY_ZONE))
+                market_event = d.astimezone(ZoneInfo(cls.MARKET_DAY_ZONE))
+                return market_event.date() == market_now.date()
             except (TypeError,ValueError): pass
         return False
 
