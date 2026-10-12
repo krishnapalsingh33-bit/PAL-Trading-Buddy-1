@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import FinalDashboard from "./pages/FinalDashboard";
 import LandingPage from "./pages/LandingPage";
 import AuthGate from "./auth/AuthGate";
@@ -13,29 +13,12 @@ function isDesktopApp() {
 
 function Workspace() {
   const [page, setPage] = useState<Page>("dashboard");
-  useEffect(() => {
-    const handleHash = () => {
-      if (window.location.hash !== "#dashboard") {
-        window.history.replaceState(null, "", "#dashboard");
-      }
-      setPage("dashboard");
-    };
-    window.addEventListener("hashchange", handleHash);
-    handleHash();
-    return () => window.removeEventListener("hashchange", handleHash);
-  }, []);
-
-  const navigate = () => {
-    if (window.location.hash !== "#dashboard") {
-      window.location.hash = "dashboard";
-    }
-    setPage("dashboard");
-  };
+  const navigate = (nextPage: Page) => setPage(nextPage);
 
   return (
     <>
       <MarketStatusBanner />
-      <FinalDashboard onPageChange={navigate} />
+      <FinalDashboard activePage={page} onPageChange={navigate} />
       <PALAssistantDock />
     </>
   );
