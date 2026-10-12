@@ -82,7 +82,7 @@ class PALService:
                 "momentum": round(momentum, 4) if momentum is not None else None,
                 "direction": cls._right_now_momentum_label(momentum),
                 "price": quote.get("price") if isinstance(quote, dict) else None,
-                "status": str(quote.get("status", "UNAVAILABLE")) if isinstance(quote, dict) else "UNAVAILABLE",
+                "status": str(quote.get("right_now_status", "WARMING_UP")) if isinstance(quote, dict) else "UNAVAILABLE",
                 "source": "live_market_observation",
                 "scope": "RIGHT_NOW",
             }
