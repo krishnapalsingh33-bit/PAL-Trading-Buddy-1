@@ -114,7 +114,7 @@ class MarketDataService:
         for symbol in self.SYMBOLS:
             quote = self.get_market_data(symbol, force_refresh=force_refresh)
             data = quote.to_dict()
-            if symbol in {"DXY", "GBPUSD", "BTCUSD"}:
+            if symbol in {"DXY", "GBPUSD", "BTCUSD", "XAUUSD"}:
                 right_now = self._get_right_now(symbol)
             else:
                 right_now = {"status": "NOT_TRACKED", "momentum_percent": None, "price": quote.price, "points": []}
