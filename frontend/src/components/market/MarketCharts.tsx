@@ -34,12 +34,12 @@ export default function MarketCharts({ markets }: Props) {
   useEffect(() => {
     let alive = true;
     setLoading(true);
-    Promise.all(ASSETS.map(async (asset) => {
+    Promise.all(ASSETS.map(async (asset): Promise<[string, Point[], boolean]> => {
       try {
         const response = await api.get<{ points?: Point[] }>(`/pal/history/${asset.symbol}`, { params: { range } });
-        return [asset.symbol, Array.isArray(response.data?.points) ? response.data.points.filter((point: Point) => Number.isFinite(Number(point?.value))) : [], false] as const;
+        return [asset.symbol, Array.isArray(response.data?.points) ? response.data.points.filter((point: Point) => Number.isFinite(Number(point?.value))) : [], false];
       } catch {
-        return [asset.symbol, [], true] as const;
+        return [asset.symbol, [], true];
       }
     })).then((results) => {
       if (!alive) return;
