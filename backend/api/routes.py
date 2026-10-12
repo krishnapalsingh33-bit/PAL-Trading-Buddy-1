@@ -88,6 +88,41 @@ def _merge_event_sources(primary: list[dict], secondary: list[dict], official: l
     return events, sorted(used_sources)
 
 
+@router.get("/markets")
+def market_snapshot():
+    """Fast quote-only endpoint for the live dashboard market tiles."""
+    current_time = datetime.now(timezone.utc)
+    market_symbols = ("DXY", "XAUUSD", "BTCUSD", "GBPUSD")
+    quotes = {}
+    for market_symbol in market_symbols:
+        try:
+            quote = service.market_data_service.get_market_data(
+                market_symbol,
+                force_refresh=True,
+            )
+            quotes[market_symbol] = quote.to_dict()
+        except Exception as ex:
+            print(f"Market quote failed for {market_symbol}: {ex}")
+            quotes[market_symbol] = {
+                "symbol": market_symbol,
+                "price": None,
+                "previous_price": None,
+                "change": None,
+                "change_percent": None,
+                "timestamp": None,
+                "source": "Yahoo Finance",
+                "status": "UNAVAILABLE",
+                "freshness_seconds": None,
+                "unit": "price",
+                "reason": "Live quote temporarily unavailable.",
+            }
+    return {
+        "success": True,
+        "timestamp": current_time.isoformat(),
+        "markets": quotes,
+    }
+
+
 @router.get("/analyze/{symbol}")
 def analyze(symbol: str):
     symbol = symbol.upper()
