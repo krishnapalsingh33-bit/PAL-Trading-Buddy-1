@@ -13,11 +13,23 @@ export type LiveMarketQuote = {
   freshness_seconds: number | null;
   unit: string;
   reason: string | null;
+  right_now_status?: string;
 };
 
-type LiveMarketResponse = {
+export type ProviderStatus = {
+  name: string;
+  configured: boolean;
+  status: "RESPONDING" | "NO_USABLE_QUOTES" | string;
+  fresh_quotes: number;
+  usable_quotes: number;
+  expected_quotes: number;
+};
+
+export type LiveMarketResponse = {
   success: boolean;
+  status: "CONNECTED" | "CONNECTED_WITH_RECENT_QUOTES" | "PARTIAL" | "UNAVAILABLE" | string;
   timestamp: string;
+  provider: ProviderStatus;
   markets: Record<string, LiveMarketQuote>;
 };
 
@@ -26,7 +38,7 @@ async function fetchMarkets(): Promise<LiveMarketResponse> {
   return data;
 }
 
-/** Lightweight independent quote polling; slower analysis/news polling remains separate. */
+/** Quotes refresh independently from the slower macro/news analysis request. */
 export function useMarkets() {
   return useQuery({
     queryKey: ["pal-markets"],
