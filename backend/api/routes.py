@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 import re
 
@@ -88,40 +89,101 @@ def _merge_event_sources(primary: list[dict], secondary: list[dict], official: l
     return events, sorted(used_sources)
 
 
+@router.get("/provider-status")
+def provider_status():
+    """Report provider configuration without claiming a live quote is available."""
+    provider = getattr(service.market_data_service, "provider", None)
+    provider_name = type(provider).__name__ if provider is not None else "Not configured"
+    symbol_mapper = getattr(provider, "yahoo_symbol", None)
+    mapped_symbols = {}
+    for symbol in ("DXY", "XAUUSD", "BTCUSD", "GBPUSD"):
+        try:
+            mapped_symbols[symbol] = symbol_mapper(symbol) if callable(symbol_mapper) else None
+        except Exception:
+            mapped_symbols[symbol] = None
+    return {
+        "success": True,
+        "api_status": "HEALTHY",
+        "provider_name": provider_name,
+        "provider_status": "CONFIGURED" if provider is not None else "UNAVAILABLE",
+        "quote_endpoint": "/pal/markets",
+        "market_symbols": mapped_symbols,
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 @router.get("/markets")
 def market_snapshot():
-    """Fast quote-only endpoint for the live dashboard market tiles."""
+    """Fetch four quotes concurrently and expose feed health separately from quote health."""
     current_time = datetime.now(timezone.utc)
     market_symbols = ("DXY", "XAUUSD", "BTCUSD", "GBPUSD")
-    quotes = {}
-    for market_symbol in market_symbols:
+    provider = getattr(service.market_data_service, "provider", None)
+    provider_name = type(provider).__name__ if provider is not None else "Not configured"
+
+    def fetch_one(market_symbol: str) -> tuple[str, dict]:
         try:
             quote = service.market_data_service.get_market_data(
                 market_symbol,
                 force_refresh=True,
             )
-            quotes[market_symbol] = quote.to_dict()
+            return market_symbol, quote.to_dict()
         except Exception as ex:
             print(f"Market quote failed for {market_symbol}: {ex}")
-            quotes[market_symbol] = {
+            return market_symbol, {
                 "symbol": market_symbol,
                 "price": None,
                 "previous_price": None,
                 "change": None,
                 "change_percent": None,
                 "timestamp": None,
-                "source": "Yahoo Finance",
+                "source": provider_name,
                 "status": "UNAVAILABLE",
                 "freshness_seconds": None,
                 "unit": "price",
-                "reason": "Live quote temporarily unavailable.",
+                "reason": "Quote request failed. Check the provider logs and network access.",
             }
+
+    quotes: dict[str, dict] = {}
+    # A single slow provider should not make the four tiles wait through each
+    # other's retries. The endpoint completes in roughly one provider timeout
+    # window rather than four serial timeout windows.
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = [pool.submit(fetch_one, symbol) for symbol in market_symbols]
+        for future in as_completed(futures):
+            key, value = future.result()
+            quotes[key] = value
+
+    usable = sum(
+        1 for quote in quotes.values()
+        if quote.get("price") is not None
+        and str(quote.get("status", "")).upper() in {"CURRENT", "RECENT"}
+    )
+    current = sum(
+        1 for quote in quotes.values()
+        if quote.get("price") is not None
+        and str(quote.get("status", "")).upper() == "CURRENT"
+    )
+    if usable == len(market_symbols):
+        feed_status = "CONNECTED" if current == len(market_symbols) else "CONNECTED_WITH_RECENT_QUOTES"
+    elif usable:
+        feed_status = "PARTIAL"
+    else:
+        feed_status = "UNAVAILABLE"
+
     return {
         "success": True,
+        "status": feed_status,
         "timestamp": current_time.isoformat(),
+        "provider": {
+            "name": provider_name,
+            "configured": provider is not None,
+            "status": "RESPONDING" if usable else "NO_USABLE_QUOTES",
+            "fresh_quotes": current,
+            "usable_quotes": usable,
+            "expected_quotes": len(market_symbols),
+        },
         "markets": quotes,
     }
-
 
 @router.get("/analyze/{symbol}")
 def analyze(symbol: str):
