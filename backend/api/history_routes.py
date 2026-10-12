@@ -7,6 +7,9 @@ router = APIRouter(prefix="/pal/history", tags=["PAL Market History"])
 
 SYMBOLS = {
     "GBPUSD": "GBPUSD=X",
+    "BTC": "BTC-USD",
+    "BTCUSD": "BTC-USD",
+    "DXY": "DX-Y.NYB",
     "GBPJPY": "GBPJPY=X",
     "EURJPY": "EURJPY=X",
     "EURGBP": "EURGBP=X",
