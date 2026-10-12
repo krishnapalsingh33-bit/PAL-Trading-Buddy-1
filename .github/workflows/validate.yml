@@ -33,7 +33,7 @@ jobs:
           models/*.py
       - name: Run online market-data tests
         working-directory: backend
-        run: python -m unittest discover -s tests -p 'test_online_market_data_provider.py' -v
+        run: python -m unittest discover -s tests -v
 
   frontend:
     runs-on: ubuntu-latest
