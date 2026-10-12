@@ -100,7 +100,8 @@ export default function FinalDashboard({ onPageChange }: Props) {
   const pairConfidence = Number(macro.gbpusd?.confidence ?? macroBias.gbpusd?.confidence ?? 0);
   const relationship = dxyBias === "BULLISH" && pairBias === "BEARISH" ? "USD FAVOURED" : dxyBias === "BEARISH" && pairBias === "BULLISH" ? "GBP FAVOURED" : "MIXED";
   const highImpact = upcoming.some((event) => String(event?.impact ?? "").toUpperCase().includes("HIGH"));
-  const weekend = [0, 6].includes(new Date(new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Kolkata", weekday: "long" }).format(now)).getDay());
+  const weekdayIST = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Kolkata", weekday: "short" }).format(now);
+  const weekend = weekdayIST === "Sat" || weekdayIST === "Sun";
   const condition = weekend ? "MARKET CLOSED" : highImpact ? "EVENT-DRIVEN" : pairConfidence >= 60 ? "DIRECTIONAL" : "MIXED / WATCH";
   const verdict = pairBias === "BULLISH" ? "GBP/USD upside bias" : pairBias === "BEARISH" ? "GBP/USD downside bias" : "No strong GBP/USD direction";
   const dxyReasons: string[] = Array.isArray(macro.dxy?.reasons) ? macro.dxy.reasons : Array.isArray(macroBias.dxy?.reasons) ? macroBias.dxy.reasons : [];
