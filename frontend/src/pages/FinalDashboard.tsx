@@ -110,7 +110,6 @@ export default function FinalDashboard({ activePage, onPageChange }: Props) {
       { ...(analysisMarkets[key] ?? {}), ...(liveMarkets[key] ?? {}) },
     ])),
   };
-  const quoteCount = ["DXY", "XAUUSD", "BTCUSD", "GBPUSD"].filter((key) => { const quote = markets[key]; return quote?.price != null && ["CURRENT", "RECENT"].includes(String(quote.status ?? "").toUpperCase()); }).length;
   const liveQuoteCount = ["DXY", "XAUUSD", "BTCUSD", "GBPUSD"].filter((key) => { const quote = liveMarkets[key]; return quote?.price != null && ["CURRENT", "RECENT"].includes(String(quote.status ?? "").toUpperCase()); }).length;
   const apiStatus = marketFeedError ? "API OFFLINE" : !marketFeed ? "CONNECTING" : marketFeed.status === "CONNECTED" ? "CONNECTED" : marketFeed.status === "CONNECTED_WITH_RECENT_QUOTES" ? "RECENT DATA" : marketFeed.status === "PARTIAL" ? "PARTIAL FEEDS" : "PROVIDER ISSUE";
   const providerStatusText = marketFeed?.provider?.name ? String(marketFeed.provider.name) + " · " + String(marketFeed.provider.status) : marketFeedError ? "Could not reach quote endpoint" : marketFeedFetching ? "Checking provider…" : "Waiting for quote endpoint";
