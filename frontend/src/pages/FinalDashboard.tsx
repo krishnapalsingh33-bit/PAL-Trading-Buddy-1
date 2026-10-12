@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import Sidebar, { type Page } from "../components/layout/Sidebar";
+import MarketCharts from "../components/market/MarketCharts";
 import { usePAL } from "../hooks/usePAL";
 
 type Props = { activePage: Page; onPageChange: (page: Page) => void };
@@ -137,6 +138,8 @@ export default function FinalDashboard({ activePage, onPageChange }: Props) {
             </header>
 
             <section className={`mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4 ${activePage === "calendar" ? "hidden" : ""}`}><BiasCard title="DXY · TODAY MACRO BIAS" bias={dxyBias} confidence={dxyConfidence} reasons={dxyReasons} /><BiasCard title="GBP / USD · TODAY MACRO BIAS" bias={pairBias} confidence={pairConfidence} reasons={pairReasons} /><BiasCard title="GOLD · CROSS-ASSET BIAS" bias={getBias(goldAssetBias.bias)} confidence={Number(goldAssetBias.confidence ?? 0)} reasons={Array.isArray(goldAssetBias.reasons) ? goldAssetBias.reasons : []} /><BiasCard title="BITCOIN · CROSS-ASSET BIAS" bias={getBias(btcAssetBias.bias)} confidence={Number(btcAssetBias.confidence ?? 0)} reasons={Array.isArray(btcAssetBias.reasons) ? btcAssetBias.reasons : []} /></section>
+
+            {activePage !== "calendar" && <MarketCharts markets={markets} />}
 
             <section className={`mt-4 rounded-2xl border border-cyan-300/20 bg-gradient-to-br from-[#0a1d23] via-[#081219] to-[#111023] p-5 shadow-[0_0_35px_rgba(34,211,238,.07)] ${activePage !== "dashboard" ? "hidden" : ""}`}>
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
