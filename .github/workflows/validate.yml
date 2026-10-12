@@ -41,7 +41,10 @@ jobs:
           node-version: 22
       - name: Install frontend dependencies
         working-directory: frontend
-        run: npm install
+        run: npm install --include=dev
       - name: TypeScript check
         working-directory: frontend
-        run: npx tsc -b
+        run: npm exec -- tsc -b
+      - name: Production build
+        working-directory: frontend
+        run: npm run build
