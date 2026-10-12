@@ -14,11 +14,13 @@ const ASSETS = [
 ] as const;
 
 function fmt(value: unknown, symbol: string) {
+  if (value === null || value === undefined || value === "") return "—";
   const n = Number(value);
   if (!Number.isFinite(n)) return "—";
   return n.toLocaleString(undefined, { maximumFractionDigits: symbol === "GBPUSD" ? 5 : 2, minimumFractionDigits: symbol === "GBPUSD" ? 4 : 2 });
 }
 function pct(value: unknown) {
+  if (value === null || value === undefined || value === "") return "—";
   const n = Number(value);
   return Number.isFinite(n) ? `${n >= 0 ? "+" : ""}${n.toFixed(2)}%` : "—";
 }
