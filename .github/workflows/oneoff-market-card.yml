@@ -1,10 +1,7 @@
 name: One-off market card integration
 
 on:
-  push:
-    branches:
-      - online-market-data
-
+  workflow_dispatch:
 permissions:
   contents: write
 
