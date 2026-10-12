@@ -98,6 +98,8 @@ export default function FinalDashboard({ onPageChange }: Props) {
   const pairBias = getBias(macro.gbpusd?.bias ?? macroBias.gbpusd?.bias);
   const dxyConfidence = Number(macro.dxy?.confidence ?? macroBias.dxy?.confidence ?? 0);
   const pairConfidence = Number(macro.gbpusd?.confidence ?? macroBias.gbpusd?.confidence ?? 0);
+  const goldAssetBias: any = todayBias.assets?.gold ?? {};
+  const btcAssetBias: any = todayBias.assets?.btcusd ?? {};
   const relationship = dxyBias === "BULLISH" && pairBias === "BEARISH" ? "USD FAVOURED" : dxyBias === "BEARISH" && pairBias === "BULLISH" ? "GBP FAVOURED" : "MIXED";
   const highImpact = upcoming.some((event) => String(event?.impact ?? "").toUpperCase().includes("HIGH"));
   const weekdayIST = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Kolkata", weekday: "short" }).format(now);
@@ -126,7 +128,7 @@ export default function FinalDashboard({ onPageChange }: Props) {
               <div className="mt-5 rounded-2xl border border-white/[.06] bg-black/20 p-4"><div className="text-[8px] font-bold uppercase tracking-[.2em] text-zinc-700">SESSION REGIME</div><div className="mt-2 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between"><div><h2 className="text-xl font-semibold">{macro.headline || "Current USD and GBP macro conditions are being monitored."}</h2><p className="mt-1 text-[10px] text-zinc-500">{macro.summary || "PAL is combining released data, fresh headlines and scheduled catalysts."}</p></div><span className="w-fit rounded-lg border border-amber-300/20 bg-amber-300/[.06] px-3 py-2 text-[9px] font-black text-amber-300">{condition}</span></div></div>
             </header>
 
-            <section className="mt-4 grid gap-4 lg:grid-cols-2"><BiasCard title="DXY · TODAY MACRO BIAS" bias={dxyBias} confidence={dxyConfidence} reasons={dxyReasons} /><BiasCard title="GBP / USD · TODAY MACRO BIAS" bias={pairBias} confidence={pairConfidence} reasons={pairReasons} /></section>
+            <section className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><BiasCard title="DXY · TODAY MACRO BIAS" bias={dxyBias} confidence={dxyConfidence} reasons={dxyReasons} /><BiasCard title="GBP / USD · TODAY MACRO BIAS" bias={pairBias} confidence={pairConfidence} reasons={pairReasons} /><BiasCard title="GOLD · CROSS-ASSET BIAS" bias={getBias(goldAssetBias.bias)} confidence={Number(goldAssetBias.confidence ?? 0)} reasons={Array.isArray(goldAssetBias.reasons) ? goldAssetBias.reasons : []} /><BiasCard title="BITCOIN · CROSS-ASSET BIAS" bias={getBias(btcAssetBias.bias)} confidence={Number(btcAssetBias.confidence ?? 0)} reasons={Array.isArray(btcAssetBias.reasons) ? btcAssetBias.reasons : []} /></section>
 
             <section className="mt-4 rounded-2xl border border-cyan-300/20 bg-gradient-to-br from-[#0a1d23] via-[#081219] to-[#111023] p-5 shadow-[0_0_35px_rgba(34,211,238,.07)]">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
