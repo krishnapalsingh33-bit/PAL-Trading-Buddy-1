@@ -99,13 +99,15 @@ class OfficialCalendarProvider:
             try:
                 if clock and ampm:
                     local = datetime.strptime(f"{month_name} {day} {event_year} {clock} {ampm}", "%B %d %Y %I:%M %p").replace(tzinfo=eastern)
+                    time_confidence = "source_scheduled"
                 else:
                     local = datetime.strptime(f"{month_name} {day} {event_year}", "%B %d %Y").replace(hour=9, minute=0, tzinfo=eastern)
+                    time_confidence = "estimated"
             except ValueError:
                 continue
             event_time = local.astimezone(timezone.utc)
             if start <= event_time <= end:
-                events.append(self._event(title, "USD", event_time, "High" if self._is_high_bls(title) else "Medium", "BLS"))
+                events.append(self._event(title, "USD", event_time, "High" if self._is_high_bls(title) else "Medium", "BLS", time_confidence))
         return events
 
     def _get_fed_events(self, start: datetime, end: datetime) -> list[dict]:
@@ -130,7 +132,7 @@ class OfficialCalendarProvider:
                 continue
             event_time = local.astimezone(timezone.utc)
             if start <= event_time <= end:
-                events.append(self._event("Federal Reserve FOMC interest rate decision", "USD", event_time, "High", "Federal Reserve"))
+                events.append(self._event("Federal Reserve FOMC interest rate decision", "USD", event_time, "High", "Federal Reserve", "estimated"))
         return events
 
     def _get_ons_events(self, start: datetime, end: datetime) -> list[dict]:
@@ -170,14 +172,16 @@ class OfficialCalendarProvider:
                     parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
                     if parsed.tzinfo is None:
                         parsed = parsed.replace(tzinfo=london)
+                    time_confidence = "source_scheduled"
                 else:
                     parsed = datetime.fromisoformat(value).replace(hour=7, minute=0, tzinfo=london)
+                    time_confidence = "estimated"
                 event_time = parsed.astimezone(timezone.utc)
             except ValueError:
                 continue
             if start <= event_time <= end:
                 impact = "High" if any(term in normalized for term in self.ONS_HIGH[:6]) else "Medium"
-                events.append(self._event(title, "GBP", event_time, impact, "UK Office for National Statistics"))
+                events.append(self._event(title, "GBP", event_time, impact, "UK Office for National Statistics", time_confidence))
         return events
 
     @staticmethod
@@ -197,12 +201,12 @@ class OfficialCalendarProvider:
         return any(term.lower() in normalized for term in ("consumer price index", "employment situation", "producer price index"))
 
     @staticmethod
-    def _event(title: str, currency: str, event_time: datetime, impact: str, source: str) -> dict:
+    def _event(title: str, currency: str, event_time: datetime, impact: str, source: str, time_confidence: str = "source_scheduled") -> dict:
         now = datetime.now(timezone.utc)
         return {
             "id": f"{source}:{currency}:{title}:{event_time.isoformat()}",
             "title": title, "currency": currency, "time": event_time.isoformat(),
-            "impact": impact, "category": "macro", "actual": None,
+            "impact": impact, "time_confidence": time_confidence, "category": "macro", "actual": None,
             "forecast": None, "previous": None,
             "country": "United States" if currency == "USD" else "United Kingdom",
             "source": source, "minutes": round((event_time - now).total_seconds() / 60),
