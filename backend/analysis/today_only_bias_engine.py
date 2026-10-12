@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 class TodayOnlyBiasEngine:
     """Compact TODAY-only fundamental bias built from released data + fresh macro news."""
 
-    ZONES = {"London": "Europe/London", "New York": "America/New_York"}
+    ZONES = {"Asia": "Asia/Tokyo", "London": "Europe/London", "New York": "America/New_York"}
     GBP_POS = ("hawkish boe", "boe rate hike", "boe hikes", "boe tightening", "uk inflation rises", "uk inflation rose", "uk inflation accelerates", "uk inflation accelerated", "uk inflation remains elevated", "hot uk inflation", "strong uk growth", "uk growth accelerates", "strong uk economy", "uk employment strengthens", "uk wages accelerate", "wage growth accelerates", "strong retail sales")
     GBP_NEG = ("dovish boe", "boe rate cut", "boe cuts", "boe easing", "uk inflation falls", "uk inflation fell", "uk inflation drops", "uk inflation dropped", "cooling uk inflation", "soft uk inflation", "weak uk growth", "uk growth slows", "uk recession", "uk employment weakens", "uk wages slow", "wage growth slows", "unemployment rises", "weak retail sales")
     USD_POS = ("hawkish fed", "hawkish federal reserve", "fed rate hike", "fed hikes", "higher for longer", "fed tightening", "rate hike bets rise", "strong us inflation", "hot us inflation", "us inflation rises", "us inflation rose", "sticky us inflation", "strong us jobs", "strong us payrolls", "strong employment", "falling unemployment", "strong retail sales", "strong us growth", "us growth accelerates")
@@ -57,8 +57,9 @@ class TodayOnlyBiasEngine:
         gbp, usd = max(-5, min(5, gbp)), max(-5, min(5, usd))
         pair = max(-10, min(10, gbp - usd))
         sessions = {}
-        for name in ("London", "New York"):
-            score = pair * .75 + (gbp if name == "London" else -usd) * .25
+        for name in ("Asia", "London", "New York"):
+            # Session scores use daily evidence; active status uses each region's DST-aware clock.
+            score = pair * .75 + (gbp if name in {"Asia", "London"} else -usd) * .25
             sessions[name] = {"active": self._open(name, now), "bias": self._resolve(score, evidence), "score": round(score, 2), "confidence": self._confidence(score, evidence), "reasons": reasons[:3], "updated_at": now.isoformat()}
 
         return {
@@ -159,7 +160,11 @@ class TodayOnlyBiasEngine:
 
     @staticmethod
     def _open(name, now):
-        local=now.astimezone(ZoneInfo(TodayOnlyBiasEngine.ZONES[name])); return local.weekday()<5 and 8<=local.hour<17
+        local = now.astimezone(ZoneInfo(TodayOnlyBiasEngine.ZONES[name]))
+        if local.weekday() >= 5:
+            return False
+        start, end = (9, 18) if name == "Asia" else (8, 17)
+        return start <= local.hour < end
 
     @staticmethod
     def _resolve(score, evidence):
