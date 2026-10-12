@@ -99,6 +99,7 @@ export default function FinalDashboard({ activePage, onPageChange }: Props) {
   const rightNow: any = todayBias.today?.right_now ?? {};
   const activeSession = todayBias.active_session ?? "No major session active";
   const markets: any = report.markets ?? news.markets ?? {};
+  const quoteCount = ["DXY", "XAUUSD", "BTCUSD", "GBPUSD"].filter((key) => { const quote = markets[key]; return quote?.price != null && ["CURRENT", "RECENT"].includes(String(quote.status ?? "").toUpperCase()); }).length;
   const evidence: any = macroBias.evidence ?? {};
   const upcoming: any[] = Array.isArray(news.upcoming_events) ? news.upcoming_events : [];
   const recent: any[] = Array.isArray(news.recent_events) ? news.recent_events : [];
