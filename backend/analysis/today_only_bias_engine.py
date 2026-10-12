@@ -66,9 +66,9 @@ class TodayOnlyBiasEngine:
         return {
             "today": {
                 "bias": self._resolve(pair, evidence),
-                "dxy": {"bias": self._resolve(usd, evidence), "score": round(usd, 2)},
-                "gbp": {"bias": self._resolve(gbp, evidence), "score": round(gbp, 2)},
-                "gbpusd": {"bias": self._resolve(pair, evidence), "score": round(pair, 2)},
+                "dxy": {"bias": self._resolve(usd, evidence), "score": round(usd, 2), "confidence": self._confidence(usd, evidence), "reasons": reasons[:4]},
+                "gbp": {"bias": self._resolve(gbp, evidence), "score": round(gbp, 2), "confidence": self._confidence(gbp, evidence), "reasons": reasons[:4]},
+                "gbpusd": {"bias": self._resolve(pair, evidence), "score": round(pair, 2), "confidence": self._confidence(pair, evidence), "reasons": reasons[:4]},
                 "score": round(pair, 2), "confidence": self._confidence(pair, evidence),
                 "reasons": reasons[:6], "evidence_count": evidence, "scope": "TODAY_ONLY", "updated_at": now.isoformat()
             },
