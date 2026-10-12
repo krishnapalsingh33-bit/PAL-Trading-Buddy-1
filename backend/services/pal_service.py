@@ -70,8 +70,8 @@ class PALService:
     @classmethod
     def _build_right_now(cls, markets: dict) -> dict:
         result: dict[str, dict] = {}
-        for symbol in ("DXY", "GBP", "GBPUSD", "BTCUSD"):
-            market_symbol = "GBPUSD" if symbol in {"GBP", "GBPUSD"} else "BTCUSD" if symbol == "BTCUSD" else "DXY"
+        for symbol in ("DXY", "GBP", "GBPUSD", "XAUUSD", "BTCUSD"):
+            market_symbol = "GBPUSD" if symbol in {"GBP", "GBPUSD"} else "BTCUSD" if symbol == "BTCUSD" else "XAUUSD" if symbol == "XAUUSD" else "DXY"
             quote = markets.get(market_symbol) if isinstance(markets, dict) else None
             momentum = quote.get("right_now_momentum_percent") if isinstance(quote, dict) else None
             try:
