@@ -3,6 +3,7 @@ import Sidebar, { type Page } from "../components/layout/Sidebar";
 import MarketCharts from "../components/market/MarketCharts";
 import { usePAL } from "../hooks/usePAL";
 import { isDesktopPAL, palApiBaseURL } from "../api/pal";
+import { palMarketApiBaseURL } from "../api/market";
 import { useMarkets } from "../hooks/useMarkets";
 
 type Props = { activePage: Page; onPageChange: (page: Page) => void };
