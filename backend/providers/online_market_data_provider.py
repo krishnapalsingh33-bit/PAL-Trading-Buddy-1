@@ -29,6 +29,7 @@ class YahooMarketDataProvider(MarketDataProvider):
 
     SYMBOL_MAP = {
         "DXY": "DX-Y.NYB", "GBPUSD": "GBPUSD=X", "GBP/USD": "GBPUSD=X",
+        "BTC": "BTC-USD", "BTCUSD": "BTC-USD", "BTC-USD": "BTC-USD",
         "XAUUSD": "GC=F", "GOLD": "GC=F", "XAU/USD": "GC=F",
         "USOIL": "CL=F", "WTI": "CL=F", "OIL": "CL=F", "XTIUSD": "CL=F",
         "US10Y": "^TNX", "10Y": "^TNX", "TNX": "^TNX",
