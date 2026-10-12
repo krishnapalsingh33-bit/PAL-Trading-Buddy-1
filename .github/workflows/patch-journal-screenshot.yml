@@ -1,9 +1,7 @@
 name: Wire journal screenshot section
 
 on:
-  push:
-    branches: [online-market-data]
-
+  workflow_dispatch:
 permissions:
   contents: write
 
