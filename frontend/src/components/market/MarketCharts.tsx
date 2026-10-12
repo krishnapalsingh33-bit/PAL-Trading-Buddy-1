@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import api from "../api/pal";
+import api from "../../api/pal";
 
 type Range = "1D" | "5D" | "1M";
 type Point = { time: number; value: number };
@@ -37,7 +37,7 @@ export default function MarketCharts({ markets }: Props) {
     Promise.all(ASSETS.map(async (asset) => {
       try {
         const response = await api.get<{ points?: Point[] }>(`/pal/history/${asset.symbol}`, { params: { range } });
-        return [asset.symbol, Array.isArray(response.data?.points) ? response.data.points.filter(point => Number.isFinite(Number(point?.value))) : [], false] as const;
+        return [asset.symbol, Array.isArray(response.data?.points) ? response.data.points.filter((point: Point) => Number.isFinite(Number(point?.value))) : [], false] as const;
       } catch {
         return [asset.symbol, [], true] as const;
       }
