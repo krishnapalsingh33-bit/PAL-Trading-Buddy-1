@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import api from "../api/pal";
+import marketApi from "../api/market";
 
 export type LiveMarketQuote = {
   symbol: string;
@@ -11,7 +11,7 @@ export type LiveMarketQuote = {
   source: string;
   status: "CURRENT" | "RECENT" | "STALE" | "UNAVAILABLE" | string;
   freshness_seconds: number | null;
-  unit: string;
+  unit?: string;
   reason: string | null;
   right_now_status?: string;
 };
@@ -34,7 +34,7 @@ export type LiveMarketResponse = {
 };
 
 async function fetchMarkets(): Promise<LiveMarketResponse> {
-  const { data } = await api.get<LiveMarketResponse>("/pal/markets");
+  const { data } = await marketApi.get<LiveMarketResponse>("/pal/markets");
   return data;
 }
 
