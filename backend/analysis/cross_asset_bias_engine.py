@@ -35,6 +35,13 @@ class CrossAssetBiasEngine:
 
         components: list[tuple[str, float, float]] = []
         reasons: list[str] = []
+        if daily is None and momentum is None:
+            return {
+                "bias": "UNKNOWN", "confidence": 0, "score": 0.0,
+                "reasons": ["No usable daily price change or short-term momentum for this asset."],
+                "evidence_count": 0, "scope": "TODAY_CROSS_ASSET",
+                "status": "INSUFFICIENT_DATA", "components": {},
+            }
         if daily is not None:
             components.append(("daily_price", max(-1.0, min(1.0, daily / 1.0)), 0.45 if symbol == "BTCUSD" else 0.40))
             reasons.append(f"Daily price change {daily:+.2f}%.")
@@ -71,7 +78,7 @@ class CrossAssetBiasEngine:
         return {
             "bias": bias, "confidence": confidence, "score": round(score, 3),
             "reasons": reasons[:4], "evidence_count": len(components),
-            "scope": "TODAY_CROSS_ASSET", "status": "CURRENT" if q.get("price") is not None else "PARTIAL",
+            "scope": "TODAY_CROSS_ASSET", "confidence_type": "EVIDENCE_STRENGTH_NOT_WIN_PROBABILITY", "status": "CURRENT" if q.get("price") is not None and (daily is not None or momentum is not None) else "PARTIAL",
             "components": {name: round(value, 3) for name, value, _ in components},
         }
 
