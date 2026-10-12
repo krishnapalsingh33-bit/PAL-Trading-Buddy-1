@@ -127,11 +127,11 @@ export default function FinalDashboard({ activePage, onPageChange }: Props) {
       <div className="flex min-h-screen">
         <Sidebar symbol="GBPUSD" activePage={activePage} onPageChange={onPageChange} />
         <main className="min-w-0 flex-1 overflow-y-auto">
-          <div className="border-b border-cyan-300/10 bg-cyan-300/[.02] px-5 py-2 text-center text-[9px] font-bold uppercase tracking-[.24em] text-cyan-300">● LIVE MULTI-SOURCE MARKET INTELLIGENCE</div>
+          <div className="border-b border-cyan-300/10 bg-cyan-300/[.02] px-5 py-2 text-center text-[9px] font-bold uppercase tracking-[.24em] text-cyan-300">● SOURCE-LABELLED MARKET DATA</div>
           <div className="mx-auto max-w-[1380px] p-5 lg:p-7">
             <header className="rounded-[26px] border border-cyan-300/10 bg-[#081219] p-6">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-                <div><div className="text-[9px] font-black uppercase tracking-[.28em] text-cyan-300">PAL · MARKET INTELLIGENCE</div><h1 className="mt-2 text-3xl font-semibold tracking-tight">{activePage === "macro" ? "Macro Desk" : activePage === "calendar" ? "Economic Calendar" : condition === "MARKET CLOSED" ? "Market Dashboard" : `${activeSession} Session Dashboard`}</h1><div className="mt-1 text-xs text-zinc-500">{dateIST(now)} · IST · Macro, news and economic catalysts</div></div>
+                <div><div className="text-[9px] font-black uppercase tracking-[.28em] text-cyan-300">PAL · MARKET INTELLIGENCE</div><h1 className="mt-2 text-3xl font-semibold tracking-tight">{activePage === "macro" ? "Macro Desk" : activePage === "calendar" ? "Economic Calendar" : "Market Dashboard"}</h1><div className="mt-1 text-xs text-zinc-500">{dateIST(now)} · IST · Macro, news and economic catalysts</div></div>
                 <div className="rounded-xl border border-white/[.07] bg-black/20 px-4 py-3 text-right"><div className="font-mono text-lg">{now.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour12: false })}</div><div className="text-[8px] uppercase tracking-[.18em] text-zinc-700">LIVE IST</div></div>
               </div>
               <div className="mt-5 rounded-2xl border border-white/[.06] bg-black/20 p-4"><div className="text-[8px] font-bold uppercase tracking-[.2em] text-zinc-700">SESSION REGIME</div><div className="mt-2 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between"><div><h2 className="text-xl font-semibold">{macro.headline || "Current USD and GBP macro conditions are being monitored."}</h2><p className="mt-1 text-[10px] text-zinc-500">{macro.summary || "PAL is combining released data, fresh headlines and scheduled catalysts."}</p></div><span className="w-fit rounded-lg border border-amber-300/20 bg-amber-300/[.06] px-3 py-2 text-[9px] font-black text-amber-300">{condition}</span></div></div>
@@ -139,13 +139,24 @@ export default function FinalDashboard({ activePage, onPageChange }: Props) {
 
             <section className={`mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4 ${activePage !== "macro" ? "hidden" : ""}`}><BiasCard title="DXY · TODAY MACRO BIAS" bias={dxyBias} confidence={dxyConfidence} reasons={dxyReasons} /><BiasCard title="GBP / USD · TODAY MACRO BIAS" bias={pairBias} confidence={pairConfidence} reasons={pairReasons} /><BiasCard title="GOLD · CROSS-ASSET BIAS" bias={getBias(goldAssetBias.bias)} confidence={Number(goldAssetBias.confidence ?? 0)} reasons={Array.isArray(goldAssetBias.reasons) ? goldAssetBias.reasons : []} /><BiasCard title="BITCOIN · CROSS-ASSET BIAS" bias={getBias(btcAssetBias.bias)} confidence={Number(btcAssetBias.confidence ?? 0)} reasons={Array.isArray(btcAssetBias.reasons) ? btcAssetBias.reasons : []} /></section>
 
-            <section className={`mt-4 grid gap-3 sm:grid-cols-3 ${activePage !== "dashboard" ? "hidden" : ""}`}>
-              {(["Asia","London","New York"] as const).map((name) => { const session = todayBias.sessions?.[name] ?? {}; return <article key={name} className="rounded-2xl border border-white/[.07] bg-[#081116] p-4 transition hover:border-cyan-300/20 hover:shadow-[0_0_24px_rgba(34,211,238,.06)]"><div className="flex items-center justify-between"><span className="text-sm font-semibold">{name} session</span><span className={session.active ? "rounded-full bg-emerald-300/10 px-2 py-1 text-[8px] font-bold text-emerald-300" : "rounded-full bg-zinc-500/10 px-2 py-1 text-[8px] font-bold text-zinc-500"}>{session.active ? "ACTIVE" : "CLOSED"}</span></div><div className="mt-2 font-mono text-xs text-cyan-200">{sessionClock(name, now)}</div><div className={`mt-3 text-xl font-black ${color(getBias(session.bias))}`}>{session.bias ?? "WAITING FOR DATA"}</div><div className="mt-1 text-[9px] text-zinc-500">Today-only bias · {Math.round(Number(session.confidence ?? 0))}% confidence</div></article>; })}
-          
-
+            <section className={`mt-3 grid grid-cols-2 gap-3 xl:grid-cols-4 ${activePage !== "dashboard" ? "hidden" : ""}`}>
+              {(["Asia", "London", "New York"] as const).map((name) => {
+                const session = todayBias.sessions?.[name] ?? {};
+                const active = Boolean(session.active);
+                return <article key={name} className="relative overflow-hidden rounded-xl border border-emerald-300/12 bg-[#06120f] p-3 transition hover:border-emerald-300/25 hover:shadow-[0_0_20px_rgba(16,240,180,.04)]">
+                  <div className="flex items-center justify-between gap-2"><span className="text-[10px] font-extrabold tracking-wider">{name.toUpperCase()}</span><span className={active ? "rounded-full bg-emerald-300/10 px-2 py-1 text-[7px] font-black text-emerald-200" : "rounded-full bg-white/[.04] px-2 py-1 text-[7px] font-black text-zinc-500"}>{active ? "OPEN" : "CLOSED"}</span></div>
+                  <div className="mt-3 font-mono text-sm text-emerald-100">{sessionClock(name, now)}</div>
+                  <div className="mt-1 text-[8px] text-zinc-600">Local market time</div>
+                </article>;
+              })}
+              <article className="relative overflow-hidden rounded-xl border border-emerald-300/15 bg-[#06120f] p-3 shadow-[0_0_24px_rgba(16,240,180,.025)]">
+                <div className="flex items-center justify-between gap-2"><span className="text-[10px] font-extrabold tracking-wider">DATA FEED</span><span className={quoteCount === 4 ? "text-[8px] font-bold text-emerald-200" : "text-[8px] font-bold text-amber-200"}>● {quoteCount === 4 ? "CONNECTED" : "PARTIAL"}</span></div>
+                <div className="mt-3 text-sm font-semibold">{quoteCount}/4 quotes usable</div>
+                <div className="mt-1 text-[8px] text-zinc-600">Live or recent provider data</div>
+              </article>
             </section>
 
-            {activePage !== "calendar" && <MarketCharts markets={markets} />}
+            {activePage === "dashboard" && <MarketCharts markets={markets} />}
 
             <section className={`mt-4 grid gap-3 xl:grid-cols-5 ${activePage !== "dashboard" ? "hidden" : ""}`}>
               <div className="relative overflow-hidden rounded-[22px] border border-emerald-300/20 bg-gradient-to-br from-[#0a2017] via-[#07140f] to-[#040b09] p-5 shadow-[0_0_36px_rgba(16,240,180,.055)] xl:col-span-3">
