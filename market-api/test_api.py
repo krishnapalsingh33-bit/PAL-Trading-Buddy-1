@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 import unittest
+from pathlib import Path
 from datetime import datetime, timezone
 from unittest.mock import Mock, patch
 
@@ -79,6 +80,24 @@ class MarketApiTests(unittest.TestCase):
         with self.assertRaises(HTTPException) as caught:
             main.proxy_analysis("http://example.com")
         self.assertEqual(caught.exception.status_code, 400)
+
+    def test_mobile_dashboard_download_file_is_present(self) -> None:
+        response = main.download_mobile_dashboard()
+        self.assertTrue(str(response.path).endswith("PAL-Trading-Buddy-Mobile.html"))
+        self.assertTrue(Path(response.path).is_file())
+
+    def test_right_now_dashboard_has_all_four_assets_and_direction_states(self) -> None:
+        html = Path(__file__).with_name("dashboard.html").read_text(encoding="utf-8")
+        self.assertIn('id="right-now-cards"', html)
+        for symbol in ('key:"DXY"', 'key:"GBPUSD"', 'key:"XAUUSD"', 'key:"BTCUSD"'):
+            self.assertIn(symbol, html)
+        for label in ("BULLISH", "BEARISH", "NEUTRAL", "WAIT"):
+            self.assertIn(label, html)
+
+    def test_mobile_dashboard_calls_hosted_api(self) -> None:
+        html = Path(__file__).with_name("PAL-Trading-Buddy-Mobile.html").read_text(encoding="utf-8")
+        self.assertIn('var API_BASE="https://pal-market-data-api.onrender.com"', html)
+        self.assertIn('target=(path.indexOf("http://")===0||path.indexOf("https://")===0)?path:API_BASE+path', html)
 
 
 if __name__ == "__main__":
