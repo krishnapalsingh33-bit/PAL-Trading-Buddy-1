@@ -40,7 +40,43 @@ if(pos!==null)html+='<div class="rangefill" style="width:'+pos+'%"></div><span c
 html+='</div><div class="rangeinfo"><span>'+(lo===null?"—":fmt(lo,item.digits))+'</span><span>DAY RANGE</span><span>'+(hi===null?"—":fmt(hi,item.digits))+'</span></div><div class="meta"><div>'+esc(q.source||"No quote source")+'</div><div>'+esc(timestamp(q.timestamp))+'</div>';
 if(q.reason)html+='<div class="error">'+esc(q.reason)+'</div>';
 html+='<div>'+(item.key==="XAUUSD"?"GC=F futures proxy · not spot XAU/USD":"Provider symbol "+item.symbol)+'</div></div></article>';return html;}
-function renderQuotes(){if(!quoteData||!quoteData.markets){$("quotes").innerHTML='<div class="panel muted small">No quote payload was returned.</div>';return;}var usable=0,fresh=0;specs.forEach(function(s){if(["CURRENT","RECENT"].indexOf(qStatus(quoteData.markets[s.key]))>=0)usable++;if(qStatus(quoteData.markets[s.key])==="CURRENT")fresh++;});$("quotes").innerHTML=specs.map(quoteCard).join("");$("quote-badge").textContent=usable+"/4 USABLE QUOTES";$("quote-badge").className="badge "+(usable===4?"good":usable?"warn":"bad");$("quote-updated").textContent="API checked "+new Date().toLocaleTimeString("en-IN",{timeZone:"Asia/Kolkata",hour12:false})+" IST";$("dxy-move").textContent=pct(quoteData.markets.DXY&&quoteData.markets.DXY.change_percent);$("gbp-move").textContent=pct(quoteData.markets.GBPUSD&&quoteData.markets.GBPUSD.change_percent);var d=quoteData.markets.DXY&&quoteData.markets.DXY.change_percent,g=quoteData.markets.GBPUSD&&quoteData.markets.GBPUSD.change_percent;if(finite(d)&&finite(g)){if(Number(d)>0&&Number(g)<0){$("bias-title").textContent="Observed USD strength / GBP weakness";$("bias-desc").textContent="DXY up and GBP/USD down today. Confirm against current-day macro evidence and structure; this is not a trade entry.";}else if(Number(d)<0&&Number(g)>0){$("bias-title").textContent="Observed USD weakness / GBP strength";$("bias-desc").textContent="DXY down and GBP/USD up today. This is price-momentum context, not a confirmed macro or trade bias.";}else{$("bias-title").textContent="Mixed cross-asset momentum";$("bias-desc").textContent="DXY and GBP/USD are not showing the typical opposing daily move. Do not force a directional view.";}}else{$("bias-title").textContent="Insufficient quote evidence";$("bias-desc").textContent="Both DXY and GBP/USD need valid daily changes before momentum can be compared.";}renderRightNow();return{usable:usable,fresh:fresh};}
+function renderQuotes(){
+if(!quoteData||!quoteData.markets){
+$("quotes").innerHTML='<div class="panel muted small">No quote payload was returned.</div>';
+$("quote-badge").textContent="QUOTES NOT LOADED";
+$("quote-badge").className="badge warn";
+return{usable:0,fresh:0};
+}
+var usable=0,fresh=0;
+specs.forEach(function(s){
+var q=quoteData.markets[s.key]||{};
+if(["CURRENT","RECENT"].indexOf(qStatus(q))>=0)usable++;
+if(qStatus(q)==="CURRENT")fresh++;
+});
+$("quotes").innerHTML=specs.map(quoteCard).join("");
+$("quote-badge").textContent=usable+"/4 USABLE QUOTES";
+$("quote-badge").className="badge "+(usable===4?"good":usable?"warn":"bad");
+$("quote-updated").textContent="API checked "+new Date().toLocaleTimeString("en-IN",{timeZone:"Asia/Kolkata",hour12:false})+" IST";
+var d=quoteData.markets.DXY&&quoteData.markets.DXY.change_percent;
+var g=quoteData.markets.GBPUSD&&quoteData.markets.GBPUSD.change_percent;
+if(finite(d)&&finite(g)){
+if(Number(d)>0&&Number(g)<0){
+$("bias-title").textContent="Observed USD strength / GBP weakness";
+$("bias-desc").textContent="DXY up and GBP/USD down today. Confirm against current-day macro evidence and structure; this is not a trade entry.";
+}else if(Number(d)<0&&Number(g)>0){
+$("bias-title").textContent="Observed USD weakness / GBP strength";
+$("bias-desc").textContent="DXY down and GBP/USD up today. This is price-momentum context, not a confirmed macro or trade bias.";
+}else{
+$("bias-title").textContent="Mixed cross-asset momentum";
+$("bias-desc").textContent="DXY and GBP/USD are not showing the typical opposing daily move. Do not force a directional view.";
+}
+}else{
+$("bias-title").textContent="Insufficient quote evidence";
+$("bias-desc").textContent="Both DXY and GBP/USD need valid daily changes before momentum can be compared.";
+}
+renderRightNow();
+return{usable:usable,fresh:fresh};
+}
 function biasDirection(value){var v=String(value==null?"":value).toUpperCase();if(v.indexOf("BULL")>=0)return"BULLISH";if(v.indexOf("BEAR")>=0)return"BEARISH";if(v.indexOf("NEUTRAL")>=0)return"NEUTRAL";return"UNKNOWN";}
 function biasDirection(value){var v=String(value==null?"":value).toUpperCase();if(v.indexOf("BULL")>=0)return"BULLISH";if(v.indexOf("BEAR")>=0)return"BEARISH";if(v.indexOf("NEUTRAL")>=0)return"NEUTRAL";return"UNKNOWN";}
 function renderRightNow(){
