@@ -197,9 +197,16 @@ def main():
                 report["alerts"].append(f"{key}: no numeric quote")
             if age is not None and age > (900 if key=="BTCUSD" else 7200):
                 report["alerts"].append(f"{key}: quote timestamp is older than the audit freshness threshold ({age:.0f}s)")
-        analysis = fetch_json(BASE + "/pal/analysis/GBPUSD", timeout=75)
-        report["analysis_success"] = bool(analysis.get("success", False))
-        report["biases"] = extract_biases(analysis)
+        try:
+            analysis = fetch_json(BASE + "/pal/analysis/GBPUSD", timeout=75)
+            report["analysis_success"] = bool(analysis.get("success", False))
+            report["biases"] = extract_biases(analysis)
+        except Exception as exc:
+            report["analysis_success"] = False
+            report["analysis_error"] = f"{type(exc).__name__}: {str(exc)[:220]}"
+            report["biases"] = {key: {"bias":"UNKNOWN","right_now_bias":"UNKNOWN","right_now_status":"UNKNOWN",
+                "right_now_momentum_pct":None,"evidence_strength":None,"right_now_strength":None,"reasons":[]} for key in SYMBOLS}
+            report["alerts"].append("PAL analysis/news endpoint failed independently of quote health; bias scoring is not available this run.")
         report["directional_consistency"] = {}
         for key in SYMBOLS:
             bias = report["biases"][key]["bias"]
