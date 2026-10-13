@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
-from threading import Lock
+from threading import Lock, Thread
 from time import monotonic
 from typing import Any
 from pathlib import Path
@@ -44,6 +44,15 @@ HEADERS = {
 _CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 _CACHE_LOCK = Lock()
 _CACHE_SECONDS = 12
+
+# Keep the HTTP quote endpoint fast: quote providers refresh in the background.
+_LATEST_QUOTES: dict[str, dict[str, Any]] = {}
+_QUOTE_STATE_LOCK = Lock()
+_REFRESHING_QUOTES = False
+_LAST_REFRESH_STARTED = 0.0
+_LAST_REFRESH_FINISHED: str | None = None
+_LAST_REFRESH_ERROR: str | None = None
+_REFRESH_COOLDOWN_SECONDS = 8.0
 
 
 def utc_now() -> datetime:
@@ -179,6 +188,60 @@ def fetch_one(key: str) -> dict[str, Any]:
     return unavailable(key, f"Quote provider failed for {provider_symbol}. {last_error}")
 
 
+def _refresh_quote_worker() -> None:
+    """Refresh all provider quotes without blocking the API request that started it."""
+    global _REFRESHING_QUOTES, _LAST_REFRESH_FINISHED, _LAST_REFRESH_ERROR
+    errors: list[str] = []
+    try:
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            futures = {pool.submit(fetch_one, key): key for key in SYMBOLS}
+            for future in as_completed(futures):
+                key = futures[future]
+                try:
+                    quote = future.result()
+                except Exception as exc:
+                    quote = unavailable(key, f"Unexpected quote worker error: {type(exc).__name__}")
+                with _QUOTE_STATE_LOCK:
+                    previous = _LATEST_QUOTES.get(key)
+                    # Preserve the last usable price if the provider refresh fails;
+                    # its original timestamp stays intact and is re-evaluated below.
+                    if quote.get("price") is None and previous and previous.get("price") is not None:
+                        retained = dict(previous)
+                        retained["refresh_error"] = quote.get("reason")
+                        _LATEST_QUOTES[key] = retained
+                        errors.append(f"{key}: {quote.get('reason') or 'provider unavailable'}")
+                    else:
+                        _LATEST_QUOTES[key] = dict(quote)
+                        if quote.get("price") is None:
+                            errors.append(f"{key}: {quote.get('reason') or 'provider unavailable'}")
+        with _QUOTE_STATE_LOCK:
+            _LAST_REFRESH_ERROR = "; ".join(errors)[:900] if errors else None
+            _LAST_REFRESH_FINISHED = utc_now().isoformat()
+    except Exception as exc:
+        with _QUOTE_STATE_LOCK:
+            _LAST_REFRESH_ERROR = f"{type(exc).__name__}: {str(exc)[:180]}"
+            _LAST_REFRESH_FINISHED = utc_now().isoformat()
+    finally:
+        with _QUOTE_STATE_LOCK:
+            _REFRESHING_QUOTES = False
+
+
+def _queue_quote_refresh() -> None:
+    """Start at most one provider refresh and return immediately to the caller."""
+    global _REFRESHING_QUOTES, _LAST_REFRESH_STARTED, _LAST_REFRESH_ERROR
+    now = monotonic()
+    with _QUOTE_STATE_LOCK:
+        if _REFRESHING_QUOTES:
+            return
+        if _LAST_REFRESH_STARTED and now - _LAST_REFRESH_STARTED < _REFRESH_COOLDOWN_SECONDS:
+            return
+        _REFRESHING_QUOTES = True
+        _LAST_REFRESH_STARTED = now
+        _LAST_REFRESH_ERROR = None
+        worker = Thread(target=_refresh_quote_worker, name="pal-quote-refresh", daemon=True)
+        worker.start()
+
+
 PAL_ANALYSIS_API_BASE = "https://pal-trading-buddy-1.onrender.com"
 PAL_ANALYSIS_TIMEOUT = (3.0, 65.0)
 
@@ -309,32 +372,76 @@ def proxy_news() -> dict[str, Any]:
 
 @app.get("/pal/markets")
 def market_snapshot() -> dict[str, Any]:
-    quotes: dict[str, dict[str, Any]] = {}
-    with ThreadPoolExecutor(max_workers=4) as pool:
-        futures = {pool.submit(fetch_one, key): key for key in SYMBOLS}
-        for future in as_completed(futures):
-            key = futures[future]
-            try:
-                quotes[key] = future.result()
-            except Exception as exc:
-                quotes[key] = unavailable(key, f"Unexpected quote worker error: {type(exc).__name__}")
+    """Return immediately; provider refresh is served stale-while-revalidate."""
+    _queue_quote_refresh()
+    with _QUOTE_STATE_LOCK:
+        quotes = {key: dict(_LATEST_QUOTES[key]) for key in _LATEST_QUOTES}
+        refreshing = _REFRESHING_QUOTES
+        refresh_started = _LAST_REFRESH_STARTED
+        refresh_finished = _LAST_REFRESH_FINISHED
+        refresh_error = _LAST_REFRESH_ERROR
 
-    usable = sum(1 for q in quotes.values() if q["price"] is not None and q["status"] in {"CURRENT", "RECENT"})
-    fresh = sum(1 for q in quotes.values() if q["price"] is not None and q["status"] == "CURRENT")
-    status = "CONNECTED" if usable == 4 and fresh == 4 else (
-        "CONNECTED_WITH_RECENT_QUOTES" if usable == 4 else "PARTIAL" if usable else "UNAVAILABLE"
+    for key, quote in quotes.items():
+        quote_status, age = freshness(quote.get("timestamp"))
+        quote["status"] = quote_status
+        quote["freshness_seconds"] = age
+        if quote_status == "STALE":
+            quote["reason"] = "Last provider timestamp is stale; do not treat this as a live quote."
+        elif quote_status == "UNAVAILABLE" and quote.get("price") is not None:
+            quote["reason"] = "The provider did not return a usable timestamp; freshness cannot be verified."
+
+    if not quotes:
+        quotes = {
+            key: unavailable(key, "Initial provider refresh is running in the background; check again in a few seconds.")
+            for key in SYMBOLS
+        }
+
+    # Keep the full four-symbol schema stable while the first fetch is running.
+    for key in SYMBOLS:
+        quotes.setdefault(key, unavailable(key, "No quote received yet; provider refresh is running in the background."))
+
+    usable = sum(1 for q in quotes.values() if q.get("price") is not None and q.get("status") in {"CURRENT", "RECENT"})
+    fresh = sum(1 for q in quotes.values() if q.get("price") is not None and q.get("status") == "CURRENT")
+    if refreshing and usable < len(SYMBOLS):
+        status = "REFRESHING"
+    elif usable == 4 and fresh == 4:
+        status = "CONNECTED"
+    elif usable == 4:
+        status = "CONNECTED_WITH_RECENT_QUOTES"
+    elif usable:
+        status = "PARTIAL"
+    else:
+        status = "UNAVAILABLE" if not refreshing else "REFRESHING"
+
+    started_at = (
+        datetime.fromtimestamp(
+            datetime.now(timezone.utc).timestamp() + (refresh_started - monotonic()),
+            timezone.utc,
+        ).isoformat()
+        if refresh_started
+        else None
     )
+
     return {
         "success": True,
         "status": status,
         "timestamp": utc_now().isoformat(),
+        "refreshing": refreshing,
+        "refresh_started_at": started_at,
+        "refresh_completed_at": refresh_finished,
+        "refresh_error": refresh_error,
         "provider": {
             "name": "Yahoo Finance chart API",
             "configured": True,
-            "status": "RESPONDING" if usable else "NO_USABLE_QUOTES",
+            "status": "REFRESHING" if refreshing else "RESPONDING" if usable else "NO_USABLE_QUOTES",
             "fresh_quotes": fresh,
             "usable_quotes": usable,
             "expected_quotes": 4,
+            "refreshing": refreshing,
+            "last_refresh_started": started_at,
+            "last_refresh_completed": refresh_finished,
+            "last_refresh_error": refresh_error,
         },
         "markets": quotes,
     }
+
