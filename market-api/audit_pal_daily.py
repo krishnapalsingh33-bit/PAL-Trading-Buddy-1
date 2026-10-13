@@ -52,24 +52,42 @@ def find_key(obj, key):
                 return found
     return None
 
+def normalize_bias(value):
+    bias = str(value or "UNKNOWN").upper()
+    if "BULL" in bias: return "BULLISH"
+    if "BEAR" in bias: return "BEARISH"
+    if "NEUTRAL" in bias: return "NEUTRAL"
+    return "UNKNOWN"
+
 def extract_biases(payload):
     tb = find_key(payload, "today_bias") or {}
     today = tb.get("today", {}) if isinstance(tb, dict) else {}
     assets = tb.get("assets", {}) if isinstance(tb, dict) else {}
+    right_now = today.get("right_now", {}) if isinstance(today, dict) else {}
     raw = {
         "DXY": (today.get("dxy") or {}),
         "GBPUSD": (today.get("gbpusd") or today.get("gbp") or {}),
         "XAUUSD": (assets.get("gold") or today.get("xauusd") or {}),
         "BTCUSD": (assets.get("btcusd") or today.get("btcusd") or {}),
     }
+    rn_raw = {
+        "DXY": (right_now.get("dxy") or {}),
+        "GBPUSD": (right_now.get("gbpusd") or right_now.get("gbp") or {}),
+        "XAUUSD": (right_now.get("xauusd") or {}),
+        "BTCUSD": (right_now.get("btcusd") or {}),
+    }
     result = {}
     for key, item in raw.items():
-        bias = str(item.get("bias", "UNKNOWN")).upper()
-        if "BULL" in bias: bias = "BULLISH"
-        elif "BEAR" in bias: bias = "BEARISH"
-        elif "NEUTRAL" in bias: bias = "NEUTRAL"
-        else: bias = "UNKNOWN"
-        result[key] = {"bias": bias, "evidence_strength": safe_float(item.get("confidence", item.get("evidence_strength"))), "reasons": item.get("reasons", [])}
+        rn = rn_raw[key]
+        result[key] = {
+            "bias": normalize_bias(item.get("bias")),
+            "right_now_bias": normalize_bias(rn.get("bias")),
+            "right_now_status": str(rn.get("status", "UNKNOWN")).upper(),
+            "right_now_momentum_pct": safe_float(rn.get("momentum", rn.get("momentum_percent"))),
+            "evidence_strength": safe_float(item.get("confidence", item.get("evidence_strength"))),
+            "right_now_strength": safe_float(rn.get("confidence", rn.get("strength", rn.get("evidence_strength")))),
+            "reasons": item.get("reasons", []),
+        }
     return result
 
 def previous_audit():
@@ -198,9 +216,16 @@ def main():
                     break
             momentum_direction = "BULLISH" if momentum is not None and momentum > 0 else "BEARISH" if momentum is not None and momentum < 0 else "NEUTRAL" if momentum is not None else "UNKNOWN"
             momentum_alignment = "NOT_REPORTED" if momentum is None or bias not in ("BULLISH", "BEARISH") else "ALIGNED" if momentum_direction == bias else "TIMEFRAME_DIVERGENCE"
-            report["directional_consistency"][key] = {"PAL_bias":bias, "observed_daily_move":daily_direction,
-                "daily_alignment":daily_alignment, "reported_short_term_momentum_pct":momentum,
-                "momentum_alignment":momentum_alignment}
+            right_now = report["biases"][key].get("right_now_bias", "UNKNOWN")
+            right_now_momentum = report["biases"][key].get("right_now_momentum_pct")
+            rn_momentum_direction = "BULLISH" if right_now_momentum is not None and right_now_momentum > 0 else "BEARISH" if right_now_momentum is not None and right_now_momentum < 0 else "NEUTRAL" if right_now_momentum is not None else "UNKNOWN"
+            rn_alignment = "NOT_SCORABLE" if right_now not in ("BULLISH", "BEARISH") or rn_momentum_direction not in ("BULLISH", "BEARISH") else "ALIGNED" if right_now == rn_momentum_direction else "TIMEFRAME_DIVERGENCE"
+            report["directional_consistency"][key] = {"PAL_daily_bias":bias, "observed_daily_move":daily_direction,
+                "daily_alignment":daily_alignment, "PAL_right_now_bias":right_now,
+                "right_now_momentum_pct":right_now_momentum, "right_now_alignment":rn_alignment,
+                "reported_short_term_momentum_pct":momentum, "daily_bias_vs_reported_momentum":momentum_alignment}
+            if rn_alignment == "TIMEFRAME_DIVERGENCE":
+                report["alerts"].append(f"{key}: Right Now Bias {right_now} conflicts with reported current momentum {right_now_momentum:+.4f}%; review signal calculation.")
             if daily_alignment == "DIVERGED":
                 report["alerts"].append(f"{key}: PAL directional label {bias} differs from the current daily move {daily_direction}; review timeframe and reasons.")
             if momentum_alignment == "TIMEFRAME_DIVERGENCE":
