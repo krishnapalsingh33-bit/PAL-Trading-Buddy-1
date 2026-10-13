@@ -91,7 +91,7 @@ $("api-badge").textContent=health.api?"API CONNECTED":"API UNREACHABLE";$("api-b
 $("macro-summary").textContent="Checking PAL analysis separately; this does not block live quote loading…";
 checkAnalysis();
 if(health.api){try{quoteData=await request("/pal/markets",6000);
-var c=renderQuotes();if(c.usable===0)lastErrors.provider="API answered, but no current/recent quotes are usable";
+var c=renderQuotes();if(c.usable===0&&quoteData.provider&&quoteData.provider.status!=="REFRESHING")lastErrors.provider="No current/recent quotes returned by provider";else delete lastErrors.provider;
 $("quote-badge").textContent=(quoteData.provider&&quoteData.provider.usable_quotes||0)+"/4 USABLE QUOTES";$("quote-badge").className="badge "+(Number(quoteData.provider&&quoteData.provider.usable_quotes)>0?"good":"warn");
 }catch(e){lastErrors.quotes=e.name==="AbortError"?"Quote status endpoint timed out after 6 seconds":e.message;if(!quoteData){$("quotes").innerHTML='<div class="panel muted small">Market API replied, but the quote request did not finish in time. Tap Refresh to retry; analysis status is separate.</div>';}else{renderQuotes();}$("quote-badge").textContent="QUOTE STATUS DELAYED";$("quote-badge").className="badge bad";}}
 else{$("quotes").innerHTML='<div class="panel muted small">The server health check did not respond within 5 seconds. Tap Refresh to retry or open API health.</div>';$("quote-badge").textContent="QUOTES NOT LOADED";$("quote-badge").className="badge warn";}
