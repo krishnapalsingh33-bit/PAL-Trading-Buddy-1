@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Daily PAL market-data and directional-bias audit. Scores are diagnostics, not financial advice."""
 from __future__ import annotations
-import io, json, os, sys, time, zipfile
+import io, json, os, re, sys, time, zipfile
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 import requests
@@ -182,6 +182,29 @@ def main():
         analysis = fetch_json(BASE + "/pal/analysis/GBPUSD", timeout=75)
         report["analysis_success"] = bool(analysis.get("success", False))
         report["biases"] = extract_biases(analysis)
+        report["directional_consistency"] = {}
+        for key in SYMBOLS:
+            bias = report["biases"][key]["bias"]
+            change = report["quotes"][key]["change_percent"]
+            threshold = THRESHOLDS[key]
+            daily_direction = "BULLISH" if change is not None and change > threshold else "BEARISH" if change is not None and change < -threshold else "NEUTRAL" if change is not None else "UNKNOWN"
+            daily_alignment = "NOT_SCORABLE" if bias not in ("BULLISH", "BEARISH") or daily_direction not in ("BULLISH", "BEARISH") else "ALIGNED" if bias == daily_direction else "DIVERGED"
+            reasons = report["biases"][key].get("reasons") or []
+            momentum = None
+            for reason in reasons:
+                match = re.search(r"Latest short-term momentum\\s+([+-]?\\d+(?:\\.\\d+)?)%", str(reason), re.I)
+                if match:
+                    momentum = safe_float(match.group(1))
+                    break
+            momentum_direction = "BULLISH" if momentum is not None and momentum > 0 else "BEARISH" if momentum is not None and momentum < 0 else "NEUTRAL" if momentum is not None else "UNKNOWN"
+            momentum_alignment = "NOT_REPORTED" if momentum is None or bias not in ("BULLISH", "BEARISH") else "ALIGNED" if momentum_direction == bias else "TIMEFRAME_DIVERGENCE"
+            report["directional_consistency"][key] = {"PAL_bias":bias, "observed_daily_move":daily_direction,
+                "daily_alignment":daily_alignment, "reported_short_term_momentum_pct":momentum,
+                "momentum_alignment":momentum_alignment}
+            if daily_alignment == "DIVERGED":
+                report["alerts"].append(f"{key}: PAL directional label {bias} differs from the current daily move {daily_direction}; review timeframe and reasons.")
+            if momentum_alignment == "TIMEFRAME_DIVERGENCE":
+                report["alerts"].append(f"{key}: PAL {bias} baseline conflicts with its reported short-term momentum {momentum:+.4f}%; this is a timeframe divergence to review, not automatically a bug.")
         report["external_checks"] = external_checks(raw_quotes)
         for key, check in report["external_checks"].items():
             if check.get("status") == "REVIEW":
