@@ -7,6 +7,60 @@ on:
     branches: [online-market-data]
 
 jobs:
+  live-smoke:
+    runs-on: ubuntu-latest
+    needs: [market-api]
+    steps:
+      - name: Wait until the latest dashboard and mobile download are deployed
+        env:
+          PAL_BASE_URL: https://pal-market-data-api.onrender.com
+        run: |
+          for attempt in {1..24}; do
+            page=$(curl -fsS --max-time 15 "$PAL_BASE_URL/dashboard" || true)
+            download_status=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 15 "$PAL_BASE_URL/download/mobile" || true)
+            if [[ "$page" == *"right-now-cards"* && "$page" == *'key:"XAUUSD"'* && "$download_status" == "200" ]]; then
+              echo "Latest four-asset dashboard and portable download are live."
+              exit 0
+            fi
+            echo "Waiting for Render deploy ($attempt/24); download HTTP=$download_status"
+            sleep 10
+          done
+          echo "Latest dashboard/download did not become available within four minutes."
+          exit 1
+      - name: Smoke test live API, provider schema and Right Now Bias
+        env:
+          PAL_BASE_URL: https://pal-market-data-api.onrender.com
+        run: |
+          python - <<'PY'
+          import json, os, urllib.request
+          base = os.environ["PAL_BASE_URL"].rstrip("/")
+          def get(path, timeout=30):
+              req = urllib.request.Request(base + path, headers={"Accept": "application/json", "Cache-Control": "no-cache"})
+              with urllib.request.urlopen(req, timeout=timeout) as response:
+                  return response.status, response.headers, response.read()
+          status, _, raw = get("/health", 15)
+          health = json.loads(raw)
+          assert status == 200 and health.get("status") == "healthy", health
+          status, _, raw = get("/pal/markets", 40)
+          quotes = json.loads(raw)
+          expected = {"DXY", "XAUUSD", "BTCUSD", "GBPUSD"}
+          assert status == 200 and expected.issubset(set(quotes.get("markets", {}))), quotes
+          provider = quotes.get("provider", {})
+          print(f"Market API: {quotes.get('status')} · usable {provider.get('usable_quotes')}/4 · fresh {provider.get('fresh_quotes')}/4")
+          status, _, raw = get("/pal/analysis-status", 25)
+          diag = json.loads(raw)
+          assert status == 200 and diag.get("reachable") and (diag.get("provider_status") or {}).get("success"), diag
+          status, _, raw = get("/pal/analysis/GBPUSD", 90)
+          analysis = json.loads(raw)
+          assert status == 200 and analysis.get("success"), analysis
+          news = ((analysis.get("report") or {}).get("news") or {})
+          today = (news.get("today_bias") or {}).get("today") or {}
+          now = today.get("right_now") or {}
+          keys = {"dxy", "gbpusd", "xauusd", "btcusd"}
+          assert keys.issubset(set(now)), {"right_now_keys": sorted(now)}
+          print("PAL analysis: connected · Right Now Bias includes DXY, GBP/USD, Gold and Bitcoin")
+          PY
+
   market-api:
     runs-on: ubuntu-latest
     steps:
