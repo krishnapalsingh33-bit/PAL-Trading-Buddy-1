@@ -99,6 +99,32 @@ class MarketApiTests(unittest.TestCase):
         self.assertIn('var API_BASE="https://pal-market-data-api.onrender.com"', html)
         self.assertIn('target=(path.indexOf("http://")===0||path.indexOf("https://")===0)?path:API_BASE+path', html)
 
+    def test_pwa_assets_are_installed_from_same_origin(self) -> None:
+        dashboard = Path(__file__).with_name("dashboard.html").read_text(encoding="utf-8")
+        manifest = Path(__file__).with_name("manifest.webmanifest").read_text(encoding="utf-8")
+        worker = Path(__file__).with_name("service-worker.js").read_text(encoding="utf-8")
+        self.assertIn('rel="manifest" href="/manifest.webmanifest"', dashboard)
+        self.assertIn('navigator.serviceWorker.register("/service-worker.js")', dashboard)
+        self.assertIn('"display": "standalone"', manifest)
+        self.assertIn('"/pal/"', worker)
+
+    def test_pwa_routes_return_existing_assets(self) -> None:
+        for response, suffix in (
+            (main.web_manifest(), "manifest.webmanifest"),
+            (main.service_worker(), "service-worker.js"),
+            (main.app_icon(), "app-icon.svg"),
+        ):
+            self.assertTrue(str(response.path).endswith(suffix))
+            self.assertTrue(Path(response.path).is_file())
+
+    def test_analysis_status_returns_quick_structured_failure(self) -> None:
+        from unittest.mock import patch
+        with patch.object(main, "_proxy_pal_json", side_effect=RuntimeError("mock offline")):
+            result = main.analysis_status()
+        self.assertFalse(result["success"])
+        self.assertFalse(result["reachable"])
+        self.assertIn("unavailable", result["error"].lower())
+
 
 if __name__ == "__main__":
     unittest.main()
