@@ -100,7 +100,7 @@ function BiasCard({ title, bias, confidence, reasons }: { title: string; bias: B
       <div className="flex items-start justify-between"><span className="text-[9px] font-bold uppercase tracking-[.2em] text-zinc-600">{title}</span><span className="text-right"><span className="block text-3xl font-semibold tabular-nums">{Math.round(safe)}%</span><span className="block text-[7px] font-bold uppercase tracking-[.16em] text-zinc-700">Evidence</span></span></div>
       <div className="mt-3 flex items-center gap-3"><span className={`h-3 w-3 rounded-full ${dot(bias)}`} /><span className={`text-2xl font-black ${color(bias)}`}>{bias}</span></div>
       <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/[.05]"><div className={`h-full rounded-full transition-all duration-700 ${bias === "BULLISH" ? "bg-emerald-300" : bias === "BEARISH" ? "bg-red-300" : bias === "UNKNOWN" ? "bg-zinc-600" : "bg-amber-300"}`} style={{ width: `${safe}%` }} /></div>
-      <BiasScore bias={bias} strength={safe} />
+      <BiasScore bias={bias} strength={safe > 0 ? safe : 40} />
       {reasons.slice(0, 3).map((reason, index) => <div key={index} className="mt-3 flex gap-2 text-[10px] leading-4 text-zinc-400"><span className="text-cyan-300">•</span><span>{reason}</span></div>)}
     </article>
   );
