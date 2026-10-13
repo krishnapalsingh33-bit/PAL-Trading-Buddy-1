@@ -206,6 +206,15 @@ def root() -> FileResponse:
     """Serve the live dashboard from the same origin as its quote APIs."""
     return FileResponse(Path(__file__).with_name("dashboard.html"), media_type="text/html")
 
+@app.get("/download/mobile", include_in_schema=False)
+def download_mobile_dashboard() -> FileResponse:
+    """Download the portable HTML dashboard for phone or laptop browsers."""
+    return FileResponse(
+        Path(__file__).with_name("PAL-Trading-Buddy-Mobile.html"),
+        media_type="text/html",
+        filename="PAL-Trading-Buddy-Mobile.html",
+    )
+
 
 @app.get("/health")
 def health() -> dict[str, str]:
