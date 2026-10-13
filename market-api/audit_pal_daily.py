@@ -192,7 +192,7 @@ def main():
             reasons = report["biases"][key].get("reasons") or []
             momentum = None
             for reason in reasons:
-                match = re.search(r"Latest short-term momentum\\s+([+-]?\\d+(?:\\.\\d+)?)%", str(reason), re.I)
+                match = re.search(r"Latest short-term momentum\s+([+-]?\d+(?:\.\d+)?)%", str(reason), re.I)
                 if match:
                     momentum = safe_float(match.group(1))
                     break
