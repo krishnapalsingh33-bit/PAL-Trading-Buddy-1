@@ -8,6 +8,7 @@ on:
 
 jobs:
   live-smoke:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/online-market-data'
     runs-on: ubuntu-latest
     needs: [market-api]
     steps:
