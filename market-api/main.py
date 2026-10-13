@@ -7,6 +7,7 @@ from time import monotonic
 from typing import Any
 from pathlib import Path
 
+import os
 import requests
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
@@ -218,7 +219,11 @@ def download_mobile_dashboard() -> FileResponse:
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "healthy", "service": "market-data-api"}
+    return {
+        "status": "healthy",
+        "service": "market-data-api",
+        "commit": os.environ.get("RENDER_GIT_COMMIT", "unknown"),
+    }
 
 
 @app.get("/pal/provider-status")
