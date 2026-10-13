@@ -135,6 +135,16 @@ class MarketApiTests(unittest.TestCase):
         self.assertNotIn('$("gbp-move").textContent', render_quotes)
         self.assertIn("renderRightNow();", render_quotes)
 
+    def test_directional_scores_are_shown_in_macro_and_right_now(self) -> None:
+        html = Path(__file__).with_name("dashboard.html").read_text(encoding="utf-8")
+        self.assertIn("function directionalSplit(bias,strength)", html)
+        self.assertIn("function scoreMarkup(bias,strength)", html)
+        self.assertIn("scoreMarkup(bias,conf)", html)
+        self.assertIn("scoreMarkup(valid?bias:\"UNKNOWN\",scoreStrength)", html)
+        self.assertIn("uncalibrated, not a probability", html)
+        self.assertIn("Bullish ", html)
+        self.assertIn("Bearish ", html)
+
     def test_mobile_dashboard_calls_hosted_api(self) -> None:
         html = Path(__file__).with_name("PAL-Trading-Buddy-Mobile.html").read_text(encoding="utf-8")
         self.assertIn('var API_BASE="https://pal-market-data-api.onrender.com"', html)
