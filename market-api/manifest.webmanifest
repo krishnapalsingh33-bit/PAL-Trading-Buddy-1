@@ -1,0 +1,24 @@
+{
+  "id": "/dashboard",
+  "name": "PAL Trading Buddy",
+  "short_name": "PAL Buddy",
+  "description": "Live market intelligence for DXY, Gold, Bitcoin and GBP/USD.",
+  "start_url": "/dashboard?app=1",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": [
+    "standalone",
+    "minimal-ui"
+  ],
+  "orientation": "portrait-primary",
+  "background_color": "#05090c",
+  "theme_color": "#05090c",
+  "icons": [
+    {
+      "src": "/app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
