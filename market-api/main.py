@@ -217,6 +217,33 @@ def download_mobile_dashboard() -> FileResponse:
     )
 
 
+@app.get("/manifest.webmanifest", include_in_schema=False)
+def web_manifest() -> FileResponse:
+    return FileResponse(
+        Path(__file__).with_name("manifest.webmanifest"),
+        media_type="application/manifest+json",
+        headers={"Cache-Control": "no-cache"},
+    )
+
+
+@app.get("/service-worker.js", include_in_schema=False)
+def service_worker() -> FileResponse:
+    return FileResponse(
+        Path(__file__).with_name("service-worker.js"),
+        media_type="application/javascript",
+        headers={"Cache-Control": "no-cache", "Service-Worker-Allowed": "/"},
+    )
+
+
+@app.get("/app-icon.svg", include_in_schema=False)
+def app_icon() -> FileResponse:
+    return FileResponse(
+        Path(__file__).with_name("app-icon.svg"),
+        media_type="image/svg+xml",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {
@@ -242,16 +269,30 @@ def provider_status() -> dict[str, Any]:
 
 @app.get("/pal/analysis-status")
 def analysis_status() -> dict[str, Any]:
-    """Check the original PAL analysis service separately from the quote feed."""
-    health_payload = _proxy_pal_json("/health", timeout=(2.0, 6.0))
-    provider_payload = _proxy_pal_json("/pal/provider-status", timeout=(2.0, 8.0))
+    """Check analysis and provider status concurrently; this must stay lightweight."""
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        health_future = pool.submit(_proxy_pal_json, "/health", (2.0, 5.0))
+        provider_future = pool.submit(_proxy_pal_json, "/pal/provider-status", (2.0, 6.0))
+        try:
+            health_payload = health_future.result(timeout=7.0)
+            provider_payload = provider_future.result(timeout=7.0)
+        except Exception as exc:
+            return {
+                "success": False,
+                "reachable": False,
+                "checked_at": utc_now().isoformat(),
+                "error": f"PAL analysis status unavailable: {type(exc).__name__}: {str(exc)[:160]}",
+                "provider_status": None,
+            }
+    healthy = str(health_payload.get("status", "")).lower() == "healthy"
     return {
-        "success": True,
-        "reachable": str(health_payload.get("status", "")).lower() == "healthy",
+        "success": healthy and bool(provider_payload.get("success", True)),
+        "reachable": healthy,
         "checked_at": utc_now().isoformat(),
         "backend_health": health_payload,
         "provider_status": provider_payload,
     }
+
 
 @app.get("/pal/analysis/{symbol}")
 def proxy_analysis(symbol: str) -> dict[str, Any]:
