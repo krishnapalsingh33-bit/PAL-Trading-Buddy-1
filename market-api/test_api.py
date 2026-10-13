@@ -13,6 +13,12 @@ class MarketApiTests(unittest.TestCase):
     def setUp(self) -> None:
         with main._CACHE_LOCK:
             main._CACHE.clear()
+        with main._QUOTE_STATE_LOCK:
+            main._LATEST_QUOTES.clear()
+            main._REFRESHING_QUOTES = False
+            main._LAST_REFRESH_STARTED = 0.0
+            main._LAST_REFRESH_FINISHED = None
+            main._LAST_REFRESH_ERROR = None
 
     def test_expected_symbols_are_configured(self) -> None:
         self.assertEqual(set(main.SYMBOLS), {"DXY", "XAUUSD", "BTCUSD", "GBPUSD"})
@@ -60,12 +66,40 @@ class MarketApiTests(unittest.TestCase):
         self.assertEqual(quote["status"], "UNAVAILABLE")
         self.assertIn("Quote provider failed", quote["reason"])
 
-    def test_market_snapshot_distinguishes_api_from_provider_status(self) -> None:
-        current = datetime.now(timezone.utc).isoformat()
-        def fake_quote(key: str) -> dict:
-            return {"symbol": key, "price": 1.0, "status": "CURRENT", "timestamp": current, "change": 0.1, "change_percent": 1.0, "source": "unit test", "reason": None}
-        with patch.object(main, "fetch_one", side_effect=fake_quote):
+    def test_market_snapshot_returns_immediately_while_refreshing(self) -> None:
+        with main._QUOTE_STATE_LOCK:
+            main._REFRESHING_QUOTES = True
+        with patch.object(main, "_queue_quote_refresh") as queue:
+            started = time.monotonic()
             result = main.market_snapshot()
+            elapsed = time.monotonic() - started
+        queue.assert_called_once()
+        self.assertLess(elapsed, 0.1)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "REFRESHING")
+        self.assertTrue(result["provider"]["refreshing"])
+        self.assertEqual(set(result["markets"]), set(main.SYMBOLS))
+        self.assertTrue(all(q["price"] is None for q in result["markets"].values()))
+        self.assertTrue(all("background" in q["reason"].lower() for q in result["markets"].values()))
+
+    def test_market_snapshot_returns_cached_quotes_without_waiting(self) -> None:
+        current = datetime.now(timezone.utc).isoformat()
+        fake_quotes = {
+            key: {
+                "symbol": key, "price": 1.0, "status": "CURRENT", "timestamp": current,
+                "change": 0.1, "change_percent": 1.0, "source": "unit test",
+                "reason": None, "provider_symbol": SYMBOLS[key]["provider_symbol"],
+            }
+            for key in main.SYMBOLS
+        }
+        with main._QUOTE_STATE_LOCK:
+            main._LATEST_QUOTES.update(fake_quotes)
+            main._LAST_REFRESH_STARTED = time.monotonic()
+        with patch.object(main, "_queue_quote_refresh"):
+            started = time.monotonic()
+            result = main.market_snapshot()
+            elapsed = time.monotonic() - started
+        self.assertLess(elapsed, 0.1)
         self.assertTrue(result["success"])
         self.assertEqual(result["status"], "CONNECTED")
         self.assertEqual(result["provider"]["usable_quotes"], 4)
