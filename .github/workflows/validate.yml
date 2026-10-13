@@ -52,12 +52,15 @@ jobs:
           status, _, raw = get("/health", 15)
           health = json.loads(raw)
           assert status == 200 and health.get("status") == "healthy", health
-          status, _, raw = get("/pal/markets", 40)
+          quote_started = time.monotonic()
+          status, _, raw = get("/pal/markets", 8, attempts=1)
+          quote_elapsed = time.monotonic() - quote_started
           quotes = json.loads(raw)
           expected = {"DXY", "XAUUSD", "BTCUSD", "GBPUSD"}
           assert status == 200 and expected.issubset(set(quotes.get("markets", {}))), quotes
+          assert quote_elapsed < 4.0, f"Quote endpoint blocked for {quote_elapsed:.2f}s; should return before provider refresh completes."
           provider = quotes.get("provider", {})
-          print(f"Market API: {quotes.get('status')} · usable {provider.get('usable_quotes')}/4 · fresh {provider.get('fresh_quotes')}/4")
+          print(f"Market API: {quotes.get('status')} · {quote_elapsed:.2f}s · usable {provider.get('usable_quotes')}/4 · fresh {provider.get('fresh_quotes')}/4")
           status, _, raw = get("/pal/analysis-status", 25, attempts=3)
           diag = json.loads(raw)
           assert status == 200 and diag.get("reachable") and (diag.get("provider_status") or {}).get("success"), diag
