@@ -88,3 +88,13 @@ jobs:
           path: desktop/dist/PAL-Trading-Buddy-Setup-*.exe
           if-no-files-found: error
           retention-days: 30
+
+      - name: Upload phone and laptop portable dashboard
+        uses: actions/upload-artifact@v4
+        with:
+          name: PAL-Trading-Buddy-Phone-Laptop
+          path: |
+            market-api/PAL-Trading-Buddy-Mobile.html
+            market-api/PHONE-LAPTOP-README.txt
+          if-no-files-found: error
+          retention-days: 30
