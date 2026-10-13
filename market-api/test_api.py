@@ -128,6 +128,13 @@ class MarketApiTests(unittest.TestCase):
         for label in ("BULLISH", "BEARISH", "NEUTRAL", "WAIT"):
             self.assertIn(label, html)
 
+    def test_right_now_refresh_does_not_write_to_removed_mini_cards(self) -> None:
+        html = Path(__file__).with_name("dashboard.html").read_text(encoding="utf-8")
+        render_quotes = html[html.index("function renderQuotes(){"):html.index("function biasDirection(")]
+        self.assertNotIn('$("dxy-move").textContent', render_quotes)
+        self.assertNotIn('$("gbp-move").textContent', render_quotes)
+        self.assertIn("renderRightNow();", render_quotes)
+
     def test_mobile_dashboard_calls_hosted_api(self) -> None:
         html = Path(__file__).with_name("PAL-Trading-Buddy-Mobile.html").read_text(encoding="utf-8")
         self.assertIn('var API_BASE="https://pal-market-data-api.onrender.com"', html)
