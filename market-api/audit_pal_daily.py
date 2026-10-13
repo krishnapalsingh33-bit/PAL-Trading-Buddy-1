@@ -108,7 +108,15 @@ def previous_audit():
             blob.raise_for_status()
             with zipfile.ZipFile(io.BytesIO(blob.content)) as zf:
                 with zf.open("audit.json") as fp:
-                    return json.load(fp)
+                    report = json.load(fp)
+            checked_at = parse_time(report.get("checked_at"))
+            # Do not grade a same-day rerun as a next-day forecast; require at least 18 hours.
+            if not checked_at or (datetime.now(timezone.utc) - checked_at).total_seconds() < 18 * 3600:
+                continue
+            biases = report.get("biases", {})
+            if not any(str((biases.get(k) or {}).get("bias", "UNKNOWN")).upper() in ("BULLISH", "BEARISH") for k in SYMBOLS):
+                continue
+            return report
     except Exception as exc:
         print(f"Historical score unavailable: {type(exc).__name__}: {exc}")
     return None
