@@ -1,0 +1,50 @@
+name: PAL Daily Bias Audit
+
+on:
+  schedule:
+    # 21:30 India Standard Time, Monday-Friday (16:00 UTC)
+    - cron: "0 16 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: pal-daily-bias-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Checkout PAL audit code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install audit HTTP client
+        run: python -m pip install "requests>=2.31,<3"
+
+      - name: Audit PAL quotes, external references and previous bias
+        id: audit
+        env:
+          PAL_BASE_URL: https://pal-market-data-api.onrender.com
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_STEP_SUMMARY: ${{ github.step_summary }}
+        run: python market-api/audit_pal_daily.py
+
+      - name: Upload machine-readable audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pal-daily-bias-audit
+          path: audit.json
+          if-no-files-found: warn
+          retention-days: 90
