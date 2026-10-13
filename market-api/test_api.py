@@ -88,7 +88,7 @@ class MarketApiTests(unittest.TestCase):
             key: {
                 "symbol": key, "price": 1.0, "status": "CURRENT", "timestamp": current,
                 "change": 0.1, "change_percent": 1.0, "source": "unit test",
-                "reason": None, "provider_symbol": SYMBOLS[key]["provider_symbol"],
+                "reason": None, "provider_symbol": main.SYMBOLS[key]["provider_symbol"],
             }
             for key in main.SYMBOLS
         }
