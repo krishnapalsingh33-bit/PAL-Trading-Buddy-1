@@ -1,0 +1,40 @@
+{
+  "name": "pal-journal-desktop",
+  "version": "2.4.0",
+  "description": "PAL Trading Journal desktop app with persistent local journal and backups",
+  "main": "main.cjs",
+  "private": true,
+  "scripts": {
+    "dist": "electron-builder --win nsis"
+  },
+  "devDependencies": {
+    "electron": "^39.2.7",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.paltradingbuddy.journal",
+    "productName": "PAL Trading Journal",
+    "artifactName": "PAL-Trading-Journal-Setup-${version}.${ext}",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.cjs",
+      "preload.cjs",
+      "PAL-Journal-Desktop.html",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "PAL Trading Journal"
+    }
+  }
+}
