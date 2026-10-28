@@ -65,7 +65,7 @@ function sessionState(date: Date) {
 }
 
 function Sparkline({ points, positive }: { points: Point[]; positive: boolean }) {
-  const values = points.map((point) => Number(point?.price)).filter(Number.isFinite) as number[];
+  const values = points.map((point) => numericValue(point?.price)).filter((value): value is number => value !== null);
   if (values.length < 2) {
     return <div className="flex h-10 items-center text-[8px] uppercase tracking-[.16em] text-zinc-700">Collecting movement</div>;
   }
@@ -210,7 +210,7 @@ export default function DashboardLive({ activePage = "dashboard", onPageChange }
               <div className="rounded-3xl border border-emerald-300/12 bg-emerald-300/[.018] p-5 lg:p-6">
                 <div className="flex items-start justify-between gap-3"><div><div className="flex items-center gap-2"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-300" /><span className="text-[9px] font-bold uppercase tracking-[.22em] text-emerald-300">Right now</span></div><h2 className="mt-2 text-xl font-semibold text-white">Immediate market state</h2></div><span className="text-[8px] uppercase tracking-wider text-zinc-600">No timeframe labels</span></div>
                 <div className="mt-4 grid gap-3 md:grid-cols-3">
-                  {rightNowRows.map((row) => <RightNowCard key={row.key} label={row.label} bias={row.bias} momentum={row.momentum} price={Number(row.price)} points={row.points} />)}
+                  {rightNowRows.map((row) => <RightNowCard key={row.key} label={row.label} bias={row.bias} momentum={row.momentum} price={numericValue(row.price)} points={row.points} />)}
                 </div>
               </div>
             </section>
