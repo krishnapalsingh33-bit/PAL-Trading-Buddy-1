@@ -27,7 +27,7 @@ app.add_middleware(
 )
 
 SYMBOLS = {
-    "DXY": {"provider_symbol": "DX-Y.NYB", "label": "US Dollar Index", "kind": "index"},
+    "DXY": {"provider_symbol": "DX-Y.NYB", "label": "US Dollar Index", "kind": "index", "source_delay_known": True, "source_note": "Yahoo Finance lists this ICE DXY feed as a delayed quote; this source cannot guarantee real-time pricing."},
     "XAUUSD": {"provider_symbol": "GC=F", "label": "Gold futures proxy", "kind": "futures_proxy"},
     "BTCUSD": {"provider_symbol": "BTC-USD", "label": "Bitcoin / US Dollar", "kind": "crypto"},
     "GBPUSD": {"provider_symbol": "GBPUSD=X", "label": "British Pound / US Dollar", "kind": "fx"},
@@ -90,6 +90,8 @@ def unavailable(key: str, reason: str) -> dict[str, Any]:
         "provider_symbol": item["provider_symbol"],
         "label": item["label"],
         "kind": item["kind"],
+        "source_delay_known": bool(item.get("source_delay_known", False)),
+        "source_note": item.get("source_note"),
         "price": None,
         "previous_price": None,
         "change": None,
@@ -139,21 +141,43 @@ def fetch_one(key: str) -> dict[str, Any]:
 
             result = results[0]
             meta = result.get("meta") or {}
-            price = meta.get("regularMarketPrice")
             timestamps = result.get("timestamp") or []
-            if price is None:
-                quote_rows = ((result.get("indicators") or {}).get("quote") or [{}])
-                closes = (quote_rows[0] or {}).get("close") or []
-                for candidate in reversed(closes):
-                    if candidate is not None:
-                        price = candidate
-                        break
+            quote_rows = ((result.get("indicators") or {}).get("quote") or [{}])
+            closes = (quote_rows[0] or {}).get("close") or []
+
+            # Compare Yahoo's metadata quote with the newest timestamped chart
+            # close. regularMarketTime can lag the latest intraday bar, so do not
+            # pair a newer timestamp with an older metadata price.
+            chart_candidate = None
+            for chart_time, chart_close in reversed(list(zip(timestamps, closes))):
+                if chart_close is not None:
+                    try:
+                        chart_candidate = (float(chart_close), int(chart_time))
+                    except (TypeError, ValueError, OverflowError):
+                        continue
+                    break
+
+            meta_price = meta.get("regularMarketPrice")
+            try:
+                meta_time = int(meta.get("regularMarketTime")) if meta.get("regularMarketTime") is not None else None
+            except (TypeError, ValueError, OverflowError):
+                meta_time = None
+
+            use_chart = chart_candidate is not None and (
+                meta_price is None or meta_time is None or chart_candidate[1] > meta_time
+            )
+            if use_chart:
+                price = chart_candidate[0]
+                stamp = timestamp_from_unix(chart_candidate[1])
+            else:
+                price = meta_price
+                stamp = timestamp_from_unix(meta_time) if meta_time is not None else None
+                if price is None and chart_candidate is not None:
+                    price = chart_candidate[0]
+                    stamp = timestamp_from_unix(chart_candidate[1])
+
             if price is None:
                 raise RuntimeError("Yahoo response contained no market price.")
-
-            stamp = timestamp_from_unix(meta.get("regularMarketTime"))
-            if not stamp and timestamps:
-                stamp = timestamp_from_unix(timestamps[-1])
 
             previous = meta.get("chartPreviousClose")
             if previous is None:
@@ -169,6 +193,8 @@ def fetch_one(key: str) -> dict[str, Any]:
                 "provider_symbol": provider_symbol,
                 "label": item["label"],
                 "kind": item["kind"],
+                "source_delay_known": bool(item.get("source_delay_known", False)),
+                "source_note": item.get("source_note"),
                 "price": current,
                 "previous_price": previous_value,
                 "change": change,
@@ -268,7 +294,11 @@ def _proxy_pal_json(path: str, timeout: tuple[float, float] = (3.0, 15.0)) -> di
 @app.get("/dashboard", include_in_schema=False)
 def root() -> FileResponse:
     """Serve the live dashboard from the same origin as its quote APIs."""
-    return FileResponse(Path(__file__).with_name("dashboard.html"), media_type="text/html")
+    return FileResponse(
+        Path(__file__).with_name("dashboard.html"),
+        media_type="text/html",
+        headers={"Cache-Control": "no-store, max-age=0, must-revalidate"},
+    )
 
 @app.get("/download/mobile", include_in_schema=False)
 def download_mobile_dashboard() -> FileResponse:
@@ -401,7 +431,8 @@ def market_snapshot() -> dict[str, Any]:
         quotes.setdefault(key, unavailable(key, "No quote received yet; provider refresh is running in the background."))
 
     usable = sum(1 for q in quotes.values() if q.get("price") is not None and q.get("status") in {"CURRENT", "RECENT"})
-    fresh = sum(1 for q in quotes.values() if q.get("price") is not None and q.get("status") == "CURRENT")
+    fresh = sum(1 for q in quotes.values() if q.get("price") is not None and q.get("status") == "CURRENT" and not q.get("source_delay_known"))
+    source_delayed = sum(1 for q in quotes.values() if q.get("price") is not None and q.get("source_delay_known"))
     if refreshing and usable < len(SYMBOLS):
         status = "REFRESHING"
     elif usable == 4 and fresh == 4:
@@ -432,6 +463,7 @@ def market_snapshot() -> dict[str, Any]:
         "refresh_error": refresh_error,
         "provider": {
             "name": "Yahoo Finance chart API",
+            "source_delayed_quotes": source_delayed,
             "configured": True,
             "status": "REFRESHING" if refreshing else "RESPONDING" if usable else "NO_USABLE_QUOTES",
             "fresh_quotes": fresh,
