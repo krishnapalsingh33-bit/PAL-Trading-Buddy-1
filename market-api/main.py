@@ -186,8 +186,9 @@ def fetch_one(key: str) -> dict[str, Any]:
             previous_value = float(previous) if previous is not None else None
             change = current - previous_value if previous_value not in (None, 0) else None
             change_percent = (change / previous_value * 100.0) if change is not None else None
-            status, age = freshness(stamp)
+            freshness_status, age = freshness(stamp)
             item = SYMBOLS[key]
+            status = "SOURCE_DELAYED" if item.get("source_delay_known") and freshness_status == "CURRENT" else freshness_status
             quote = {
                 "symbol": key,
                 "provider_symbol": provider_symbol,
@@ -202,8 +203,9 @@ def fetch_one(key: str) -> dict[str, Any]:
                 "timestamp": stamp,
                 "source": "Yahoo Finance chart API",
                 "status": status,
+                "freshness_status": freshness_status,
                 "freshness_seconds": age,
-                "reason": None if status in {"CURRENT", "RECENT"} else "Last provider timestamp is old; do not treat as a live quote.",
+                "reason": ("Source is known to be delayed; this is not a guaranteed real-time quote." if status == "SOURCE_DELAYED" else None if status in {"CURRENT", "RECENT"} else "Last provider timestamp is old; do not treat as a live quote."),
             }
             with _CACHE_LOCK:
                 _CACHE[key] = (monotonic(), quote)
@@ -413,9 +415,13 @@ def market_snapshot() -> dict[str, Any]:
 
     for key, quote in quotes.items():
         quote_status, age = freshness(quote.get("timestamp"))
-        quote["status"] = quote_status
+        quote["freshness_status"] = quote_status
+        delayed_source = bool(quote.get("source_delay_known"))
+        quote["status"] = "SOURCE_DELAYED" if delayed_source and quote_status == "CURRENT" else quote_status
         quote["freshness_seconds"] = age
-        if quote_status == "STALE":
+        if delayed_source and quote_status == "CURRENT":
+            quote["reason"] = "Source is known to be delayed; this is not a guaranteed real-time quote."
+        elif quote_status == "STALE":
             quote["reason"] = "Last provider timestamp is stale; do not treat this as a live quote."
         elif quote_status == "UNAVAILABLE" and quote.get("price") is not None:
             quote["reason"] = "The provider did not return a usable timestamp; freshness cannot be verified."
@@ -430,7 +436,7 @@ def market_snapshot() -> dict[str, Any]:
     for key in SYMBOLS:
         quotes.setdefault(key, unavailable(key, "No quote received yet; provider refresh is running in the background."))
 
-    usable = sum(1 for q in quotes.values() if q.get("price") is not None and q.get("status") in {"CURRENT", "RECENT"})
+    usable = sum(1 for q in quotes.values() if q.get("price") is not None and q.get("status") in {"CURRENT", "RECENT", "SOURCE_DELAYED"})
     fresh = sum(1 for q in quotes.values() if q.get("price") is not None and q.get("status") == "CURRENT" and not q.get("source_delay_known"))
     source_delayed = sum(1 for q in quotes.values() if q.get("price") is not None and q.get("source_delay_known"))
     if refreshing and usable < len(SYMBOLS):
