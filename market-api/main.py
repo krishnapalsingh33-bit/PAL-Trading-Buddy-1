@@ -113,6 +113,58 @@ def fetch_one(key: str) -> dict[str, Any]:
 
     provider_symbol = SYMBOLS[key]["provider_symbol"]
     last_error = "No response received."
+
+    # Prefer TickerLayer's API-key-protected USDX snapshot for DXY. This is a
+    # real-time API feed according to the provider, but it is indicative and
+    # is NOT the official ICE index. If the key is absent or the provider fails,
+    # continue to Yahoo and preserve its SOURCE_DELAYED warning.
+    tickerlayer_key = os.environ.get("TICKERLAYER_API_KEY", "").strip()
+    if key == "DXY" and tickerlayer_key:
+        try:
+            response = requests.get(
+                "https://api.tickerlayer.com/indices/snapshot/USDX",
+                headers={"x-api-key": tickerlayer_key, "Accept": "application/json"},
+                timeout=(2.5, 5.0),
+            )
+            response.raise_for_status()
+            payload = response.json()
+            price = payload.get("last_price")
+            stamp_ms = payload.get("last_timestamp")
+            if price is None or stamp_ms is None:
+                raise RuntimeError("TickerLayer snapshot is missing last_price or last_timestamp.")
+            stamp = datetime.fromtimestamp(float(stamp_ms) / 1000.0, timezone.utc).isoformat()
+            previous = payload.get("prev_close")
+            current = float(price)
+            previous_value = float(previous) if previous is not None else None
+            change = current - previous_value if previous_value not in (None, 0) else payload.get("change")
+            change_percent = payload.get("change_percent")
+            if change_percent is None and change is not None and previous_value not in (None, 0):
+                change_percent = float(change) / previous_value * 100.0
+            freshness_status, age = freshness(stamp)
+            quote = {
+                "symbol": "DXY",
+                "provider_symbol": "USDX",
+                "label": "US Dollar Index (indicative reference)",
+                "kind": "index",
+                "source_delay_known": False,
+                "source_note": "TickerLayer indicative USDX feed; derived from non-exchange sources and not the official ICE index.",
+                "price": current,
+                "previous_price": previous_value,
+                "change": float(change) if change is not None else None,
+                "change_percent": float(change_percent) if change_percent is not None else None,
+                "timestamp": stamp,
+                "source": "TickerLayer indicative API",
+                "status": freshness_status,
+                "freshness_status": freshness_status,
+                "freshness_seconds": age,
+                "reason": None if freshness_status in {"CURRENT", "RECENT"} else "TickerLayer timestamp is old; do not treat this as a live quote.",
+            }
+            with _CACHE_LOCK:
+                _CACHE[key] = (monotonic(), quote)
+            return quote
+        except Exception as exc:
+            last_error = f"TickerLayer DXY request failed; falling back to delayed Yahoo feed: {type(exc).__name__}: {str(exc)[:140]}"
+
     for base in YAHOO_CHART_ENDPOINTS:
         try:
             response = requests.get(
@@ -353,10 +405,12 @@ def provider_status() -> dict[str, Any]:
     return {
         "success": True,
         "api_status": "HEALTHY",
-        "provider_name": "Yahoo Finance chart API",
+        "provider_name": "TickerLayer USDX + Yahoo Finance fallback (other symbols)",
         "provider_status": "ON_DEMAND",
+        "dxy_provider": "TickerLayer indicative API" if os.environ.get("TICKERLAYER_API_KEY", "").strip() else "Yahoo Finance delayed fallback (TICKERLAYER_API_KEY not configured)",
+        "dxy_source_note": "TickerLayer USDX is indicative and not the official ICE index.",
         "quote_endpoint": "/pal/markets",
-        "market_symbols": {key: value["provider_symbol"] for key, value in SYMBOLS.items()},
+        "market_symbols": {**{key: value["provider_symbol"] for key, value in SYMBOLS.items()}, "DXY": "USDX (TickerLayer when API key configured; Yahoo DX-Y.NYB fallback)"},
         "checked_at": utc_now().isoformat(),
         "scope": "quotes only; no journal or account endpoints",
     }
