@@ -57,8 +57,8 @@ class TodayOnlyBiasEngine:
 
         pair_quote = self._quote(news.get("markets") or {}, ("GBPUSD", "GBP/USD"))
         dxy_quote = self._quote(news.get("markets") or {}, ("DXY",))
-        pair_change = self._change(pair_quote) if self._quote_is_fresh(pair_quote) else None
-        dxy_change = self._change(dxy_quote) if self._quote_is_fresh(dxy_quote) else None
+        pair_change = self._change(pair_quote) if self._quote_is_fresh(pair_quote, now) else None
+        dxy_change = self._change(dxy_quote) if self._quote_is_fresh(dxy_quote, now) else None
         if pair_change is not None: gbp += max(-1, min(1, pair_change / .50)) * .35; evidence += 1
         if dxy_change is not None: usd += max(-1, min(1, dxy_change / .50)) * .35; evidence += 1
 
@@ -169,7 +169,7 @@ class TodayOnlyBiasEngine:
         return {}
 
     @staticmethod
-    def _quote_is_fresh(q):
+    def _quote_is_fresh(q, now=None):
         if str(q.get("status", "")).upper() not in {"CURRENT", "RECENT"}:
             return False
         timestamp = q.get("timestamp") or q.get("updated_at")
@@ -179,7 +179,10 @@ class TodayOnlyBiasEngine:
             observed = datetime.fromisoformat(str(timestamp).replace("Z", "+00:00"))
             if observed.tzinfo is None:
                 observed = observed.replace(tzinfo=timezone.utc)
-            age = (datetime.now(timezone.utc) - observed.astimezone(timezone.utc)).total_seconds()
+            reference = now or datetime.now(timezone.utc)
+            if reference.tzinfo is None:
+                reference = reference.replace(tzinfo=timezone.utc)
+            age = (reference.astimezone(timezone.utc) - observed.astimezone(timezone.utc)).total_seconds()
             return 0 <= age <= 300
         except (TypeError, ValueError):
             return False
