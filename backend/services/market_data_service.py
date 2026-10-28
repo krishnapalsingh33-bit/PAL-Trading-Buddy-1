@@ -76,7 +76,19 @@ class MarketDataService:
             with self._lock:
                 previous = self._right_now.get(symbol)
             if previous:
-                return previous
+                retained = dict(previous)
+                try:
+                    updated = datetime.fromisoformat(str(retained.get("updated_at", "")).replace("Z", "+00:00"))
+                    if updated.tzinfo is None:
+                        updated = updated.replace(tzinfo=timezone.utc)
+                    age = (datetime.now(timezone.utc) - updated.astimezone(timezone.utc)).total_seconds()
+                    if age > 120:
+                        retained["status"] = "STALE"
+                        retained["reason"] = "Last right-now momentum observation is older than 120 seconds."
+                except (TypeError, ValueError):
+                    retained["status"] = "UNAVAILABLE"
+                    retained["reason"] = "Right-now momentum timestamp could not be verified."
+                return retained
             return {
                 "status": "MARKET_CLOSED" if self._intraday_market_closed(symbol) else "WARMING_UP",
                 "momentum_percent": None,

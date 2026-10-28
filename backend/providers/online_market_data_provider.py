@@ -117,9 +117,25 @@ class YahooMarketDataProvider(MarketDataProvider):
             result = ((payload.get("chart") or {}).get("result") or [None])[0]
             if not result:
                 return None, None, []
+            timestamps = result.get("timestamp") or []
             closes = ((((result.get("indicators") or {}).get("quote") or [{}])[0]).get("close") or [])
-            clean = [self._number(value) for value in closes]
-            clean = [value for value in clean if value is not None]
+            now_ts = datetime.now(timezone.utc).timestamp()
+            observations = []
+            for stamp, close in zip(timestamps, closes):
+                value = self._number(close)
+                try:
+                    stamp_value = int(stamp)
+                except (TypeError, ValueError, OverflowError):
+                    continue
+                if value is not None and stamp_value <= now_ts:
+                    observations.append((stamp_value, value))
+            if not observations:
+                return None, None, []
+            newest_stamp, newest_price = observations[-1]
+            # A fresh HTTP response can still contain an old market candle.
+            if now_ts - newest_stamp > 120:
+                return None, newest_price, [value for _, value in observations[-4:]]
+            clean = [value for _, value in observations]
             if len(clean) < 4:
                 return None, clean[-1] if clean else None, clean
             # Use the latest completed movement over the newest few one-minute observations.

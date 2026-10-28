@@ -23,35 +23,49 @@ function tone(bias: Bias) {
   return "text-zinc-500 border-white/[.08] bg-white/[.02]";
 }
 
-function priceTone(value: unknown) {
+function numericValue(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
   const n = Number(value);
-  if (Number.isFinite(n) && n > 0) return "text-emerald-300";
-  if (Number.isFinite(n) && n < 0) return "text-red-300";
+  return Number.isFinite(n) ? n : null;
+}
+
+function priceTone(value: unknown) {
+  const n = numericValue(value);
+  if (n !== null && n > 0) return "text-emerald-300";
+  if (n !== null && n < 0) return "text-red-300";
   return "text-zinc-500";
 }
 
 function formatPrice(value: unknown) {
-  const n = Number(value);
-  return Number.isFinite(n) ? n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 5 }) : "—";
+  const n = numericValue(value);
+  return n !== null ? n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 5 }) : "—";
 }
 
 function formatPct(value: unknown, digits = 3) {
-  const n = Number(value);
-  return Number.isFinite(n) ? `${n >= 0 ? "+" : ""}${n.toFixed(digits)}%` : "—";
+  const n = numericValue(value);
+  return n !== null ? `${n >= 0 ? "+" : ""}${n.toFixed(digits)}%` : "—";
+}
+
+function zonedParts(date: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat("en-GB", { timeZone, weekday: "short", hour: "2-digit", hourCycle: "h23" }).formatToParts(date);
+  return Object.fromEntries(parts.map((part) => [part.type, part.value]));
 }
 
 function sessionState(date: Date) {
-  const hour = date.getUTCHours();
+  const isOpen = (timeZone: string, startHour: number, endHour: number) => {
+    const local = zonedParts(date, timeZone);
+    return !["Sat", "Sun"].includes(local.weekday) && Number(local.hour) >= startHour && Number(local.hour) < endHour;
+  };
   return {
-    London: hour >= 7 && hour < 16,
-    "New York": hour >= 13 && hour < 22,
-    Sydney: hour >= 21 || hour < 6,
-    Asia: hour >= 0 && hour < 9,
+    London: isOpen("Europe/London", 8, 17),
+    "New York": isOpen("America/New_York", 8, 17),
+    Sydney: isOpen("Australia/Sydney", 8, 17),
+    Asia: isOpen("Asia/Tokyo", 9, 18),
   };
 }
 
 function Sparkline({ points, positive }: { points: Point[]; positive: boolean }) {
-  const values = points.map((point) => Number(point?.price)).filter(Number.isFinite) as number[];
+  const values = points.map((point) => numericValue(point?.price)).filter((value): value is number => value !== null);
   if (values.length < 2) {
     return <div className="flex h-10 items-center text-[8px] uppercase tracking-[.16em] text-zinc-700">Collecting movement</div>;
   }
@@ -182,7 +196,7 @@ export default function DashboardLive({ activePage = "dashboard", onPageChange }
             <section className="mt-4 grid gap-4 xl:grid-cols-2">
               <div className="rounded-3xl border border-white/[.07] bg-white/[.018] p-5 lg:p-6">
                 <div className="flex items-start justify-between gap-3"><div><div className="text-[9px] font-bold uppercase tracking-[.22em] text-cyan-300">Current-day context</div><h2 className="mt-2 text-xl font-semibold text-white">TODAY'S GBP/USD BIAS</h2></div><span className={`rounded-xl border px-3 py-2 text-[10px] font-bold ${tone(currentDayBias)}`}>{currentDayBias}</span></div>
-                <div className="mt-5 flex items-center justify-between text-[9px] uppercase tracking-wider text-zinc-600"><span>{confidence}% confidence</span><span>{evidenceCount} evidence items</span></div>
+                <div className="mt-5 flex items-center justify-between text-[9px] uppercase tracking-wider text-zinc-600"><span>{confidence}% heuristic score · not a probability</span><span>{evidenceCount} evidence items</span></div>
                 <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/[.06]"><div className="h-full rounded-full bg-cyan-300/70 transition-all duration-700" style={{ width: `${Math.max(0, Math.min(100, confidence))}%` }} /></div>
                 <div className="mt-5 grid grid-cols-2 gap-2 text-[9px]">
                   <div className="rounded-xl border border-white/[.06] bg-black/20 p-3"><div className="uppercase tracking-wider text-zinc-600">GBP score</div><div className="mt-1 font-mono text-sm text-zinc-300">{Number(today.gbp?.score ?? 0).toFixed(2)}</div></div>
@@ -196,7 +210,7 @@ export default function DashboardLive({ activePage = "dashboard", onPageChange }
               <div className="rounded-3xl border border-emerald-300/12 bg-emerald-300/[.018] p-5 lg:p-6">
                 <div className="flex items-start justify-between gap-3"><div><div className="flex items-center gap-2"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-300" /><span className="text-[9px] font-bold uppercase tracking-[.22em] text-emerald-300">Right now</span></div><h2 className="mt-2 text-xl font-semibold text-white">Immediate market state</h2></div><span className="text-[8px] uppercase tracking-wider text-zinc-600">No timeframe labels</span></div>
                 <div className="mt-4 grid gap-3 md:grid-cols-3">
-                  {rightNowRows.map((row) => <RightNowCard key={row.key} label={row.label} bias={row.bias} momentum={row.momentum} price={Number(row.price)} points={row.points} />)}
+                  {rightNowRows.map((row) => <RightNowCard key={row.key} label={row.label} bias={row.bias} momentum={row.momentum} price={numericValue(row.price)} points={row.points} />)}
                 </div>
               </div>
             </section>
@@ -213,7 +227,7 @@ export default function DashboardLive({ activePage = "dashboard", onPageChange }
                 ["Live quotes", `${["DXY", "GBPUSD", "XAUUSD", "USOIL", "US10Y", "US500"].filter((symbol) => String(markets?.[symbol]?.status ?? "").toUpperCase() === "CURRENT").length}/6`, "current provider observations"],
                 ["Sessions open", String(sessionCards.filter((session) => session.open).length), "live session status"],
                 ["Today GBP/USD", currentDayBias, "current-day evidence"],
-                ["Data integrity", "VERIFIED", "unknown stays unknown"],
+                ["Data integrity", "CHECKED", "null values stay unavailable"],
               ].map(([label, value, detail]) => <div key={label} className="rounded-2xl border border-white/[.07] bg-white/[.018] p-5 transition-all duration-300 hover:-translate-y-1 hover:border-white/[.12]"><div className="text-[9px] uppercase tracking-[.2em] text-zinc-600">{label}</div><div className={`mt-3 text-2xl font-semibold ${label === "Data integrity" ? "text-emerald-300" : label === "Today GBP/USD" ? tone(currentDayBias).split(" ")[0] : "text-white"}`}>{value}</div><div className="mt-1 text-[10px] text-zinc-600">{detail}</div></div>)}
             </section>
 
