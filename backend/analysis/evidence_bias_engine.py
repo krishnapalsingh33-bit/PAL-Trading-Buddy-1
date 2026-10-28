@@ -59,12 +59,12 @@ class EvidenceBiasEngine:
         else:
             alignment = "MIXED"
         return {
-            "dxy": usd, "gbp": gbp,
-            "gbpusd": {"bias": pair_bias, "score": pair_score, "confidence": pair_conf,
+            "dxy": {**usd, "confidence_type": "HEURISTIC_NOT_PROBABILITY"}, "gbp": {**gbp, "confidence_type": "HEURISTIC_NOT_PROBABILITY"},
+            "gbpusd": {"bias": pair_bias, "score": pair_score, "confidence": pair_conf, "confidence_type": "HEURISTIC_NOT_PROBABILITY",
                         "reasons": cls._pair_reasons(usd, gbp),
                         "bullish": pair_bias in {"BULLISH", "LEAN_BULLISH"},
                         "bearish": pair_bias in {"BEARISH", "LEAN_BEARISH"}},
-            "confidence": pair_conf, "alignment": alignment,
+            "confidence": pair_conf, "confidence_type": "HEURISTIC_NOT_PROBABILITY", "alignment": alignment,
             "evidence": {
                 "released_events": sum(1 for e in events if cls._is_released(e, now)),
                 "upcoming_events": sum(1 for e in events if not cls._is_released(e, now)),
@@ -88,13 +88,18 @@ class EvidenceBiasEngine:
             score += signed; evidence_count += 1; release_evidence += 1
             positive += int(signed > 0); negative += int(signed < 0)
             reasons.append(f"{event.get('title', 'Macro release')}: {'stronger' if signed > 0 else 'weaker'} than forecast ({event.get('actual')} vs {event.get('forecast')}).")
+        seen_headlines: set[str] = set()
         for headline in headlines:
             title = str(headline.get("title", "")).strip()
+            normalized_title = re.sub(r"\W+", " ", title.lower()).strip()
+            if not title or normalized_title in seen_headlines:
+                continue
+            seen_headlines.add(normalized_title)
             c = str(headline.get("currency", "")).upper()
             # CROSS headlines are useful for both currencies when the title
             # clearly contains currency-specific language.
             direction = cls._headline_direction(currency, title) if c == currency else cls._cross_direction(currency, title) if c == "CROSS" else 0
-            if not direction:
+            if not direction or cls._has_local_negation(title):
                 continue
             signed = direction * 0.75 * cls._source_weight(headline) * cls._recency_weight(headline, now)
             score += signed; evidence_count += 1; headline_evidence += 1
@@ -113,6 +118,12 @@ class EvidenceBiasEngine:
                 "reasons": list(dict.fromkeys(reasons))[:5], "evidence_count": evidence_count,
                 "headline_evidence": headline_evidence, "release_evidence": release_evidence,
                 "bullish": bias in {"BULLISH", "LEAN_BULLISH"}, "bearish": bias in {"BEARISH", "LEAN_BEARISH"}}
+
+    @staticmethod
+    def _has_local_negation(title: str) -> bool:
+        # Keyword sentiment is unreliable when the directional phrase is negated.
+        # Omit ambiguous headlines rather than guessing their intended meaning.
+        return bool(re.search(r"\b(?:not|no|never|fails? to|failed to|unlikely to|without|denies?|denied)\b.{0,55}\b(?:rise|rises|rising|fall|falls|falling|strengthen|strengthens|weaken|weakens|hawkish|dovish|rate cut|rate hike|inflation|growth|jobs|payrolls|recession)\b", title.lower()))
 
     @classmethod
     def _cross_direction(cls, currency: str, title: str) -> int:
