@@ -22,11 +22,16 @@ class TodayOnlyBiasEngine:
         evidence = 0
         reasons: list[str] = []
 
+        seen_titles: set[str] = set()
         for item in self._today_news(news, now):
             currency = self._currency(item); title = self._text(item)
-            if currency not in {"GBP", "USD"} or not title:
+            normalized_title = " ".join(title.lower().split())
+            if currency not in {"GBP", "USD"} or not title or normalized_title in seen_titles:
                 continue
+            seen_titles.add(normalized_title)
             direction = self._headline_direction(currency, title)
+            if self._has_local_negation(title):
+                direction = 0
             if not direction:
                 continue
             score = direction * self._source_weight(item)
@@ -50,8 +55,10 @@ class TodayOnlyBiasEngine:
             evidence += 1
             reasons.append(f"{currency} data: {self._text(event)} — actual {event.get('actual')} vs forecast {event.get('forecast')}")
 
-        pair_change = self._change(self._quote(news.get("markets") or {}, ("GBPUSD", "GBP/USD")))
-        dxy_change = self._change(self._quote(news.get("markets") or {}, ("DXY",)))
+        pair_quote = self._quote(news.get("markets") or {}, ("GBPUSD", "GBP/USD"))
+        dxy_quote = self._quote(news.get("markets") or {}, ("DXY",))
+        pair_change = self._change(pair_quote) if self._quote_is_fresh(pair_quote) else None
+        dxy_change = self._change(dxy_quote) if self._quote_is_fresh(dxy_quote) else None
         if pair_change is not None: gbp += max(-1, min(1, pair_change / .50)) * .35; evidence += 1
         if dxy_change is not None: usd += max(-1, min(1, dxy_change / .50)) * .35; evidence += 1
 
@@ -124,6 +131,11 @@ class TodayOnlyBiasEngine:
     @staticmethod
     def _text(item): return str(item.get("title", item.get("event", "")) or "").strip()
 
+    @staticmethod
+    def _has_local_negation(title):
+        import re
+        return bool(re.search(r"\b(?:not|no|never|fails? to|failed to|unlikely to|without|denies?|denied)\b.{0,55}\b(?:rise|rises|rising|fall|falls|falling|strengthen|strengthens|weaken|weakens|hawkish|dovish|rate cut|rate hike|inflation|growth|jobs|payrolls|recession)\b", title.lower()))
+
     @classmethod
     def _headline_direction(cls, c, title):
         t=title.lower(); pos=cls.GBP_POS if c=="GBP" else cls.USD_POS; neg=cls.GBP_NEG if c=="GBP" else cls.USD_NEG
@@ -155,6 +167,22 @@ class TodayOnlyBiasEngine:
         for k in keys:
             if isinstance(markets.get(k), dict): return markets[k]
         return {}
+
+    @staticmethod
+    def _quote_is_fresh(q):
+        if str(q.get("status", "")).upper() not in {"CURRENT", "RECENT"}:
+            return False
+        timestamp = q.get("timestamp") or q.get("updated_at")
+        if not timestamp:
+            return False
+        try:
+            observed = datetime.fromisoformat(str(timestamp).replace("Z", "+00:00"))
+            if observed.tzinfo is None:
+                observed = observed.replace(tzinfo=timezone.utc)
+            age = (datetime.now(timezone.utc) - observed.astimezone(timezone.utc)).total_seconds()
+            return 0 <= age <= 300
+        except (TypeError, ValueError):
+            return False
 
     @staticmethod
     def _change(q):
