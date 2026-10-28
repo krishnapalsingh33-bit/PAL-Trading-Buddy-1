@@ -59,6 +59,31 @@ class MarketApiTests(unittest.TestCase):
             self.assertEqual(main.fetch_one("BTCUSD")["price"], 70000.0)
             self.assertEqual(get.call_count, 1)
 
+    def test_fetch_one_prefers_newer_chart_close_when_metadata_time_lags(self) -> None:
+        now = int(time.time())
+        response = Mock()
+        response.json.return_value = {
+            "chart": {
+                "error": None,
+                "result": [{
+                    "meta": {
+                        "regularMarketPrice": 102.465,
+                        "chartPreviousClose": 102.319,
+                        "regularMarketTime": now - 600,
+                    },
+                    "timestamp": [now - 60, now],
+                    "indicators": {
+                        "quote": [{"close": [102.44, 102.430], "low": [102.40, 102.41], "high": [102.48, 102.45]}]
+                    },
+                }],
+            }
+        }
+        with patch.object(main.requests, "get", return_value=response):
+            quote = main.fetch_one("DXY")
+        self.assertAlmostEqual(quote["price"], 102.430)
+        self.assertEqual(quote["timestamp"], main.timestamp_from_unix(now))
+        self.assertTrue(quote["source_delay_known"])
+
     def test_fetch_one_reports_provider_failure_without_fake_price(self) -> None:
         with patch.object(main.requests, "get", side_effect=TimeoutError("test timeout")):
             quote = main.fetch_one("DXY")
@@ -135,15 +160,21 @@ class MarketApiTests(unittest.TestCase):
         self.assertNotIn('$("gbp-move").textContent', render_quotes)
         self.assertIn("renderRightNow();", render_quotes)
 
-    def test_directional_scores_are_shown_in_macro_and_right_now(self) -> None:
+    def test_macro_scores_are_separate_from_market_move_verdicts(self) -> None:
         html = Path(__file__).with_name("dashboard.html").read_text(encoding="utf-8")
         self.assertIn("function directionalSplit(bias,strength)", html)
         self.assertIn("function scoreMarkup(bias,strength)", html)
         self.assertIn("scoreMarkup(bias,conf)", html)
-        self.assertIn("scoreMarkup(valid?bias:\"UNKNOWN\",scoreStrength)", html)
+        self.assertNotIn("scoreMarkup(valid?bias:\"UNKNOWN\",scoreStrength)", html)
+        for verdict in (
+            "MATCHES CURRENT MOVE",
+            "CONTRADICTED BY CURRENT MOVE",
+            "INCONCLUSIVE · SOURCE DELAYED",
+            "INCONCLUSIVE · QUOTE OLDER THAN 5 MIN",
+        ):
+            self.assertIn(verdict, html)
+        self.assertIn("source_delay_known", html)
         self.assertIn("uncalibrated, not a probability", html)
-        self.assertIn("Bullish ", html)
-        self.assertIn("Bearish ", html)
 
     def test_mobile_dashboard_calls_hosted_api(self) -> None:
         html = Path(__file__).with_name("PAL-Trading-Buddy-Mobile.html").read_text(encoding="utf-8")
